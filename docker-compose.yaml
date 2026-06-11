@@ -211,6 +211,7 @@ services:
   ui:
     image: ${REGISTRY:-dograhai}/dograh-ui:latest
     environment:
+      HOSTNAME: "0.0.0.0"
       # Server-side URL (SSR, internal Docker network)
       BACKEND_URL: "${BACKEND_URL:-http://api:8000}"
       NODE_ENV: "oss"
@@ -229,7 +230,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget --no-verbose --tries=1 --spider http://localhost:3010 || exit 1",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:3010 || exit 1",
         ]
       interval: 30s
       timeout: 10s

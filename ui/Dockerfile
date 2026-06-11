@@ -34,6 +34,7 @@ COPY ui/sentry.server.config.ts ./
 COPY ui/postcss.config.mjs ./
 COPY ui/public ./public
 COPY ui/src ./src
+COPY ui/.env* ./
 
 # Set build-time environment variables (needed for Next.js build)
 ENV NEXT_PUBLIC_NODE_ENV="oss"
