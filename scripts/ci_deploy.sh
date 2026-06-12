@@ -51,19 +51,28 @@ error_exit() {
 
 # Main deployment process
 main() {
-    log "Starting CI/CD deployment process..."
-
-    # Create log directory if it doesn't exist
-    mkdir -p "$LOG_DIR"
-
-    # Check if deployment directory exists
+    # Check if deployment directory exists FIRST
     if [ ! -d "$DEPLOY_DIR" ]; then
-        error_exit "Deployment directory not found: $DEPLOY_DIR"
+        echo "[ERROR] Deployment directory not found: $DEPLOY_DIR" >&2
+        exit 1
     fi
 
     # Navigate to deployment directory
+    cd "$DEPLOY_DIR" || {
+        echo "[ERROR] Failed to change to deployment directory: $DEPLOY_DIR" >&2
+        exit 1
+    }
+
+    # Create log directory (now that we're in the right place)
+    if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+        echo "[ERROR] Failed to create log directory: $LOG_DIR" >&2
+        echo "[ERROR] Current directory: $(pwd)" >&2
+        echo "[ERROR] Permissions: $(ls -ld "$DEPLOY_DIR" 2>&1)" >&2
+        exit 1
+    fi
+
+    log "Starting CI/CD deployment process..."
     log "Navigating to deployment directory: $DEPLOY_DIR"
-    cd "$DEPLOY_DIR" || error_exit "Failed to change to deployment directory"
 
     # Check current branch
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
