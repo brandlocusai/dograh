@@ -75,22 +75,22 @@ jobs:
           echo "🚀 Starting deployment to production VM..."
           echo "Deploying commit: $COMMIT_SHA"
 
-          # Copy deployment script to VM
+          # Copy Docker deployment scripts to VM
           scp -i ~/.ssh/deploy_key -P $VM_PORT \
-            scripts/ci_deploy.sh scripts/healthcheck.sh \
+            scripts/ci_deploy_docker.sh scripts/healthcheck_docker.sh \
             $VM_USER@$VM_HOST:/tmp/
 
           # Execute deployment on VM
           ssh -i ~/.ssh/deploy_key -p $VM_PORT $VM_USER@$VM_HOST << 'ENDSSH'
             set -e
-            chmod +x /tmp/ci_deploy.sh /tmp/healthcheck.sh
+            chmod +x /tmp/ci_deploy_docker.sh /tmp/healthcheck_docker.sh
 
             echo "==================================="
             echo "Starting deployment process..."
             echo "==================================="
 
-            # Run deployment script
-            if /tmp/ci_deploy.sh; then
+            # Run Docker deployment script
+            if /tmp/ci_deploy_docker.sh; then
               echo "✅ Deployment completed successfully"
 
               # Run health checks
@@ -99,7 +99,7 @@ jobs:
               echo "Running post-deployment health checks..."
               echo "==================================="
 
-              if /tmp/healthcheck.sh; then
+              if /tmp/healthcheck_docker.sh; then
                 echo "✅ Health checks passed"
                 exit 0
               else
