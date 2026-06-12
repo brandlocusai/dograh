@@ -48,11 +48,11 @@ jobs:
           # Check if relevant files changed
           CHANGED_FILES=$(git diff --name-only ${{ github.event.workflow_run.head_sha }}^ ${{ github.event.workflow_run.head_sha }})
 
-          if echo "$CHANGED_FILES" | grep -qE '^(api/|docker-compose|Dockerfile|scripts/rolling_update.sh|\.github/workflows/)'; then
-            echo "Deployment needed - API or Docker files changed"
+          if echo "$CHANGED_FILES" | grep -qE '^(api/|ui/|docker-compose|Dockerfile|scripts/rolling_update.sh|\.github/workflows/)'; then
+            echo "Deployment needed - API, UI, or Docker files changed"
             echo "should_deploy=true" >> $GITHUB_OUTPUT
           else
-            echo "No deployment needed - only non-API files changed"
+            echo "No deployment needed - only documentation or other files changed"
             echo "should_deploy=false" >> $GITHUB_OUTPUT
           fi
 
