@@ -129,6 +129,11 @@ main() {
     fi
     log "Using: $COMPOSE_CMD"
 
+    # Enable Docker BuildKit for faster builds (if available)
+    export DOCKER_BUILDKIT=1
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    log "Docker BuildKit enabled for faster builds"
+
     # Run database migrations in the API container
     log "==================================="
     log "Running database migrations..."
@@ -145,29 +150,42 @@ main() {
 
     log_success "Database migrations completed"
 
-    # Restart containers with minimal downtime
+    # Rebuild and recreate containers with new code
     log "==================================="
-    log "Restarting Docker containers..."
+    log "Rebuilding and deploying containers..."
     log "==================================="
 
-    # For zero-downtime, we'll restart only the application containers
-    # nginx will continue serving during the restart
+    # Build new images for API and UI with latest code
+    log "Building new Docker images (this may take 2-5 minutes)..."
+    BUILD_START=$(date +%s)
 
-    log "Restarting API container..."
-    if ! $COMPOSE_CMD restart api 2>&1 | tee -a "$LOG_FILE"; then
-        error_exit "Failed to restart API container"
+    if ! $COMPOSE_CMD build api ui 2>&1 | tee -a "$LOG_FILE"; then
+        error_exit "Failed to build Docker images"
     fi
-    log_success "API container restarted"
+
+    BUILD_END=$(date +%s)
+    BUILD_TIME=$((BUILD_END - BUILD_START))
+    log_success "Docker images built successfully (took ${BUILD_TIME}s)"
+
+    # Recreate containers with new images
+    # --no-deps: Don't recreate linked services (postgres, redis, etc.)
+    # --force-recreate: Force recreation even if config hasn't changed
+    # -d: Detached mode
+    log "Recreating API container with new image..."
+    if ! $COMPOSE_CMD up -d --no-deps --force-recreate api 2>&1 | tee -a "$LOG_FILE"; then
+        error_exit "Failed to recreate API container"
+    fi
+    log_success "API container recreated"
 
     # Wait for API to be healthy
     log "Waiting for API to be ready..."
-    sleep 5
+    sleep 10
 
-    log "Restarting UI container..."
-    if ! $COMPOSE_CMD restart ui 2>&1 | tee -a "$LOG_FILE"; then
-        error_exit "Failed to restart UI container"
+    log "Recreating UI container with new image..."
+    if ! $COMPOSE_CMD up -d --no-deps --force-recreate ui 2>&1 | tee -a "$LOG_FILE"; then
+        error_exit "Failed to recreate UI container"
     fi
-    log_success "UI container restarted"
+    log_success "UI container recreated"
 
     # Wait for UI to be ready
     log "Waiting for UI to be ready..."
