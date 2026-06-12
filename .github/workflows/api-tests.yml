@@ -8,6 +8,13 @@ on:
       - "pipecat/**"
       - "scripts/**"
       - ".github/workflows/api-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "pipecat/**"
+      - "scripts/**"
+      - ".github/workflows/api-tests.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -1,0 +1,137 @@
+name: Deploy to Debian VM
+
+on:
+  workflow_run:
+    workflows: ["API tests"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to deploy (leave empty for latest)'
+        required: false
+        type: string
+
+# Prevent concurrent deployments
+concurrency:
+  group: deploy-to-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production VM
+    runs-on: ubuntu-latest
+    # Only run if tests passed or manual dispatch
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Check if deployment needed
+        id: check_changes
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual deployment triggered"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if relevant files changed
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.workflow_run.head_sha }}^ ${{ github.event.workflow_run.head_sha }})
+
+          if echo "$CHANGED_FILES" | grep -qE '^(api/|docker-compose|Dockerfile|scripts/rolling_update.sh|\.github/workflows/)'; then
+            echo "Deployment needed - API or Docker files changed"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "No deployment needed - only non-API files changed"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH
+        if: steps.check_changes.outputs.should_deploy == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEBIAN_VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEBIAN_VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to VM
+        if: steps.check_changes.outputs.should_deploy == 'true'
+        env:
+          VM_HOST: ${{ secrets.DEBIAN_VM_HOST }}
+          VM_USER: ${{ secrets.DEBIAN_VM_USER }}
+          VM_PORT: ${{ secrets.DEBIAN_VM_PORT }}
+          COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
+        run: |
+          echo "🚀 Starting deployment to production VM..."
+          echo "Deploying commit: $COMMIT_SHA"
+
+          # Copy deployment script to VM
+          scp -i ~/.ssh/deploy_key -P $VM_PORT \
+            scripts/ci_deploy.sh scripts/healthcheck.sh \
+            $VM_USER@$VM_HOST:/tmp/
+
+          # Execute deployment on VM
+          ssh -i ~/.ssh/deploy_key -p $VM_PORT $VM_USER@$VM_HOST << 'ENDSSH'
+            set -e
+            chmod +x /tmp/ci_deploy.sh /tmp/healthcheck.sh
+
+            echo "==================================="
+            echo "Starting deployment process..."
+            echo "==================================="
+
+            # Run deployment script
+            if /tmp/ci_deploy.sh; then
+              echo "✅ Deployment completed successfully"
+
+              # Run health checks
+              echo ""
+              echo "==================================="
+              echo "Running post-deployment health checks..."
+              echo "==================================="
+
+              if /tmp/healthcheck.sh; then
+                echo "✅ Health checks passed"
+                exit 0
+              else
+                echo "❌ Health checks failed"
+                exit 1
+              fi
+            else
+              echo "❌ Deployment failed"
+              exit 1
+            fi
+          ENDSSH
+
+          echo "🎉 Deployment successful!"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+
+      - name: Deployment Status
+        if: steps.check_changes.outputs.should_deploy == 'true'
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ Deployment completed successfully"
+            echo "🔗 Application: https://${{ secrets.DEBIAN_VM_HOST }}"
+          else
+            echo "❌ Deployment failed - check logs above"
+            exit 1
+          fi
+
+      - name: Skip Deployment Notice
+        if: steps.check_changes.outputs.should_deploy != 'true'
+        run: |
+          echo "ℹ️  Skipping deployment - no relevant files changed"
+          echo "Only UI or documentation files were modified"
