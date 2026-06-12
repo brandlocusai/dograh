@@ -11,6 +11,7 @@
 
 set -e  # Exit on any error
 set -u  # Exit on undefined variable
+set -o pipefail  # Exit on failure in any part of a pipe
 
 # Configuration
 DEPLOY_DIR="/root/dograh-live/dograh"
@@ -139,11 +140,11 @@ main() {
     log "Running database migrations..."
     log "==================================="
 
-    if ! $COMPOSE_CMD exec -T api alembic upgrade head 2>&1 | tee -a "$LOG_FILE"; then
+    if ! $COMPOSE_CMD exec -T -w /app api alembic -c api/alembic.ini upgrade head 2>&1 | tee -a "$LOG_FILE"; then
         log_warning "Migration failed or container not running, trying alternative method..."
 
         # Try running migrations with docker-compose run
-        if ! $COMPOSE_CMD run --rm api alembic upgrade head 2>&1 | tee -a "$LOG_FILE"; then
+        if ! $COMPOSE_CMD run --rm -w /app api alembic -c api/alembic.ini upgrade head 2>&1 | tee -a "$LOG_FILE"; then
             error_exit "Database migrations failed"
         fi
     fi

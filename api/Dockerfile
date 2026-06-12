@@ -64,7 +64,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 # retries, then fall back to a pinned BtbN/FFmpeg-Builds autobuild. Every archive
 # is SHA256-verified before extraction. The two sources have different internal
 # layouts, so locate the binaries with `find` rather than a fixed strip path.
-FROM debian:trixie-slim AS ffmpeg-static
+FROM debian:bookworm-slim AS ffmpeg-static
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates xz-utils \
