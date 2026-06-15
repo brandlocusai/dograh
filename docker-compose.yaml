@@ -93,7 +93,7 @@ services:
     depends_on:
       dograh-init:
         condition: service_completed_successfully
-      ui:
+      ui-a:
         condition: service_started
     ports:
       - "80:80"
@@ -126,66 +126,36 @@ services:
     networks:
       - app-network
 
-  api:
-    image: ${REGISTRY:-dograhai}/dograh-api:latest
+  # ── Blue-Green API bands ────────────────────────────────────────────────────
+  # Nginx routes to the active band. During a rolling update both bands run
+  # briefly (new band passes health checks → nginx reloads → old band stops).
+  # No host port is published — Nginx reaches them via the internal network.
+  x-api-template: &api-template
+    image: ${REGISTRY:-ghcr.io/brandlocusai}/dograh-api:latest
+    pull_policy: always
     volumes:
       - shared-tmp:/tmp
     environment:
-      # Core application config
       ENVIRONMENT: "${ENVIRONMENT:-local}"
       LOG_LEVEL: "INFO"
-
-      # Replace this environment variable if you are using a custom
-      # domain to host the stack
       BACKEND_API_ENDPOINT: "${BACKEND_API_ENDPOINT:-http://localhost:8000}"
-
-      # Database configuration (using containerized postgres)
       DATABASE_URL: "postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres"
-
-      # Redis configuration (using containerized redis)
       REDIS_URL: "redis://:redissecret@redis:6379"
-
-      # Storage configuration - using local MinIO
       ENABLE_AWS_S3: "false"
-
-      # MinIO
       MINIO_ENDPOINT: "minio:9000"
-      # Full URL (with scheme) browsers use to reach MinIO. For remote
-      # deployments behind HTTPS, set MINIO_PUBLIC_ENDPOINT in .env to
-      # e.g. https://your-server.example.com (nginx proxies /voice-audio/).
       MINIO_PUBLIC_ENDPOINT: "${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}"
       MINIO_ACCESS_KEY: "minioadmin"
       MINIO_SECRET_KEY: "minioadmin"
       MINIO_BUCKET: "voice-audio"
       MINIO_SECURE: "false"
-
-      # Number of uvicorn worker processes (each is its own process bound to a
-      # distinct port starting at 8000). dograh-init renders nginx upstreams
-      # from this value and nginx load-balances across them with least_conn.
       FASTAPI_WORKERS: "${FASTAPI_WORKERS:-1}"
-
-      # Langfuse — credentials can be set here or per-organization via the UI
-      # at /settings. Tracing is automatically active when credentials are
-      # available; uncomment to set defaults for all organizations.
-      # LANGFUSE_SECRET_KEY: ""
-      # LANGFUSE_PUBLIC_KEY: ""
-      # LANGFUSE_HOST: ""
-
-      # TURN server configuration (for WebRTC NAT traversal in remote server)
-      # Uses time-limited credentials via TURN REST API (HMAC-SHA1)
       TURN_HOST: "${TURN_HOST:-}"
       TURN_SECRET: "${TURN_SECRET:-}"
       FORCE_TURN_RELAY: "${FORCE_TURN_RELAY:-false}"
-
       OSS_JWT_SECRET: "${OSS_JWT_SECRET:?OSS_JWT_SECRET must be set to a strong secret}"
-
-      # Telemetry
       ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-true}"
       POSTHOG_API_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
       POSTHOG_HOST: "https://us.i.posthog.com"
-
-    ports:
-      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -208,24 +178,28 @@ services:
     networks:
       - app-network
 
-  ui:
-    image: ${REGISTRY:-dograhai}/dograh-ui:latest
+  # Band A — initially active (ports 8000-8003 inside the container)
+  api-a:
+    <<: *api-template
+    container_name: dograh-api-a
+
+  # Band B — inactive at start; becomes active during rolling update
+  api-b:
+    <<: *api-template
+    container_name: dograh-api-b
+    profiles: ["band-b"]  # Only started explicitly by rolling_update_docker.sh
+
+  # ── Blue-Green UI bands ─────────────────────────────────────────────────────
+  x-ui-template: &ui-template
+    image: ${REGISTRY:-ghcr.io/brandlocusai}/dograh-ui:latest
+    pull_policy: always
     environment:
       HOSTNAME: "0.0.0.0"
-      # Server-side URL (SSR, internal Docker network)
-      BACKEND_URL: "${BACKEND_URL:-http://api:8000}"
+      BACKEND_URL: "${BACKEND_URL:-http://api-a:8000}"
       NODE_ENV: "oss"
-      # Flag to enable/ disable posthog
       ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-true}"
-
-      # Posthog
       POSTHOG_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
       POSTHOG_HOST: "https://us.posthog.com"
-    ports:
-      - "3010:3010"
-    depends_on:
-      api:
-        condition: service_healthy
     healthcheck:
       test:
         [
@@ -239,10 +213,41 @@ services:
     networks:
       - app-network
 
+  # Band A UI — initially active
+  ui-a:
+    <<: *ui-template
+    container_name: dograh-ui-a
+    environment:
+      HOSTNAME: "0.0.0.0"
+      BACKEND_URL: "${BACKEND_URL:-http://api-a:8000}"
+      NODE_ENV: "oss"
+      ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-true}"
+      POSTHOG_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
+      POSTHOG_HOST: "https://us.posthog.com"
+    depends_on:
+      api-a:
+        condition: service_healthy
+
+  # Band B UI — inactive at start; becomes active during rolling update
+  ui-b:
+    <<: *ui-template
+    container_name: dograh-ui-b
+    profiles: ["band-b"]  # Only started explicitly by rolling_update_docker.sh
+    environment:
+      HOSTNAME: "0.0.0.0"
+      BACKEND_URL: "${BACKEND_URL:-http://api-b:8000}"
+      NODE_ENV: "oss"
+      ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-true}"
+      POSTHOG_KEY: "phc_ItizB1dP6yv7ZYobbcqrpxTdbomDA8hJFSEmAMdYvIr"
+      POSTHOG_HOST: "https://us.posthog.com"
+    depends_on:
+      api-b:
+        condition: service_healthy
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-tunnel
-    command: tunnel --no-autoupdate --url http://api:8000 --metrics 0.0.0.0:2000
+    command: tunnel --no-autoupdate --url http://api-a:8000 --metrics 0.0.0.0:2000
     ports:
       - "2000:2000" # Expose metrics endpoint
     networks:

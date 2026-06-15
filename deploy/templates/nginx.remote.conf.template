@@ -46,7 +46,7 @@ server {
     }
 
     location / {
-        proxy_pass         http://ui:3010;
+        proxy_pass         http://dograh_ui;
         proxy_http_version 1.1;
 
         # Important for WebSockets / hot reload etc.

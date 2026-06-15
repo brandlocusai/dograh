@@ -293,11 +293,18 @@ dograh_require_init_compose_layout() {
 dograh_render_remote_nginx_conf() {
     local project_dir=${1:-$(dograh_project_dir)}
     local destination=${2:-"$project_dir/nginx.conf"}
+    # Band names: A or B (default A — used at initial setup and rolling updates)
+    local api_band=${3:-A}
+    local ui_band=${4:-A}
     local template=""
     local tmp_upstream=""
 
     template="$(dograh_template_path "nginx.remote.conf.template")"
     tmp_upstream="$(mktemp)"
+
+    # Lowercase band letters for Docker service names (api-a / api-b)
+    local api_svc="api-$(echo "$api_band" | tr '[:upper:]' '[:lower:]')"
+    local ui_svc="ui-$(echo "$ui_band" | tr '[:upper:]' '[:lower:]')"
 
     {
         echo "# Backend API workers - one uvicorn process per port, balanced by least_conn."
@@ -305,9 +312,15 @@ dograh_render_remote_nginx_conf() {
         echo "upstream dograh_api {"
         echo "    least_conn;"
         for ((i=0; i<FASTAPI_WORKERS; i++)); do
-            printf '    server api:%d max_fails=3 fail_timeout=10s;\n' "$((8000 + i))"
+            printf '    server %s:%d max_fails=3 fail_timeout=10s;\n' "$api_svc" "$((8000 + i))"
         done
         echo "    keepalive 32;"
+        echo "}"
+        echo ""
+        echo "# Frontend UI — switched atomically during Blue-Green updates."
+        echo "upstream dograh_ui {"
+        printf '    server %s:3010 max_fails=3 fail_timeout=10s;\n' "$ui_svc"
+        echo "    keepalive 16;"
         echo "}"
     } > "$tmp_upstream"
 

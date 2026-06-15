@@ -7,10 +7,12 @@ FROM python:3.13-slim AS builder
 WORKDIR /app
 
 # Install git in builder stage (needed for any pip install from git URLs)
-RUN apt-get update && apt-get install -y \
-    git \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Force HTTPS for Debian repositories and bypass initial TLS checks to bootstrap ca-certificates
+RUN sed -i 's/http:/https:/g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true \
+ && apt-get -o Acquire::https::Verify-Peer=false update \
+ && apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates git \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
 # uv (https://github.com/astral-sh/uv) for ~5-10x faster installs than pip.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
@@ -66,9 +68,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 # layouts, so locate the binaries with `find` rather than a fixed strip path.
 FROM debian:bookworm-slim AS ffmpeg-static
 ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates xz-utils \
-    && rm -rf /var/lib/apt/lists/* \
+RUN sed -i 's/http:/https:/g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true \
+ && apt-get -o Acquire::https::Verify-Peer=false update \
+ && apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates curl xz-utils \
+ && rm -rf /var/lib/apt/lists/*
     && case "${TARGETARCH}" in \
          amd64) \
            primary_url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" ; \

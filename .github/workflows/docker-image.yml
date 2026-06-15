@@ -1,6 +1,12 @@
 name: Build and Push Docker Images
 
 on:
+  workflow_run:
+    workflows: ["API tests"]
+    types:
+      - completed
+    branches:
+      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -29,21 +35,43 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     outputs:
       short_sha: ${{ steps.tags.outputs.short_sha }}
       version: ${{ steps.tags.outputs.version }}
       push_latest: ${{ steps.tags.outputs.push_latest }}
+      ghcr_namespace: ${{ steps.tags.outputs.ghcr_namespace }}
+      push_dockerhub: ${{ steps.tags.outputs.push_dockerhub }}
+      dh_namespace: ${{ steps.tags.outputs.dh_namespace }}
     steps:
       - name: Compute tags
         id: tags
         run: |
           SHORT_SHA="${GITHUB_SHA::8}"
 
+          # Lowercase the repository owner for GHCR namespace
+          GHCR_NAMESPACE="ghcr.io/$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "ghcr_namespace=${GHCR_NAMESPACE}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            echo "push_dockerhub=true" >> "$GITHUB_OUTPUT"
+            echo "dh_namespace=${{ secrets.DOCKERHUB_USERNAME }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "push_dockerhub=false" >> "$GITHUB_OUTPUT"
+            echo "dh_namespace=" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "${{ github.event_name }}" = "release" ]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#dograh-}"
             VERSION="${VERSION#v}"
             PUSH_LATEST="true"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            VERSION="latest"
+            PUSH_LATEST="true"
+            SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-8)
           else
             VERSION="${{ inputs.image_tag }}"
             if [ -z "$VERSION" ]; then
@@ -97,6 +125,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
+        if: ${{ needs.prepare.outputs.push_dockerhub == 'true' }}
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -106,8 +135,19 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute Build Outputs
+        id: build_outputs
+        run: |
+          GHCR_IMAGE="${{ needs.prepare.outputs.ghcr_namespace }}/${{ matrix.service.name }}"
+          if [ "${{ needs.prepare.outputs.push_dockerhub }}" = "true" ]; then
+            DH_IMAGE="${{ needs.prepare.outputs.dh_namespace }}/${{ matrix.service.name }}"
+            echo "destinations=${DH_IMAGE},${GHCR_IMAGE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "destinations=${GHCR_IMAGE}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push by digest
         id: build
@@ -116,7 +156,7 @@ jobs:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
           platforms: ${{ matrix.platform.name }}
-          outputs: 'type=image,"name=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.name }},${{ env.REGISTRY_GHCR }}/${{ secrets.GHCR_USERNAME }}/${{ matrix.service.name }}",push-by-digest=true,name-canonical=true,push=true'
+          outputs: 'type=image,"name=${{ steps.build_outputs.outputs.destinations }}",push-by-digest=true,name-canonical=true,push=true'
           cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.platform.short }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ matrix.platform.short }}
 
@@ -156,6 +196,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
+        if: ${{ needs.prepare.outputs.push_dockerhub == 'true' }}
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -165,13 +206,14 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest lists
         env:
-          DH_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
-          GH_NAMESPACE: ${{ env.REGISTRY_GHCR }}/${{ secrets.GHCR_USERNAME }}
+          PUSH_DOCKERHUB: ${{ needs.prepare.outputs.push_dockerhub }}
+          DH_NAMESPACE: ${{ needs.prepare.outputs.dh_namespace }}
+          GH_NAMESPACE: ${{ needs.prepare.outputs.ghcr_namespace }}
           VERSION: ${{ needs.prepare.outputs.version }}
           SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
           PUSH_LATEST: ${{ needs.prepare.outputs.push_latest }}
@@ -179,35 +221,42 @@ jobs:
           inspect_digests() {
             service="$1"
             digest_dir="/tmp/digests/$service"
-            dh_image="$DH_NAMESPACE/$service"
             gh_image="$GH_NAMESPACE/$service"
 
             for digest_file in "$digest_dir"/*; do
               digest="$(cat "$digest_file")"
-              docker buildx imagetools inspect "$dh_image@sha256:$digest" >/dev/null
               docker buildx imagetools inspect "$gh_image@sha256:$digest" >/dev/null
+              
+              if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                dh_image="$DH_NAMESPACE/$service"
+                docker buildx imagetools inspect "$dh_image@sha256:$digest" >/dev/null
+              fi
             done
           }
 
           create_manifests() {
             service="$1"
             digest_dir="/tmp/digests/$service"
-            dh_image="$DH_NAMESPACE/$service"
             gh_image="$GH_NAMESPACE/$service"
 
-            dh_refs=$(printf "${dh_image}@sha256:%s " $(cat "$digest_dir"/*))
             gh_refs=$(printf "${gh_image}@sha256:%s " $(cat "$digest_dir"/*))
-
-            dh_tags=(-t "$dh_image:$VERSION" -t "$dh_image:$SHORT_SHA")
             gh_tags=(-t "$gh_image:$VERSION" -t "$gh_image:$SHORT_SHA")
 
             if [ "$PUSH_LATEST" = "true" ]; then
-              dh_tags+=(-t "$dh_image:latest")
               gh_tags+=(-t "$gh_image:latest")
             fi
 
-            docker buildx imagetools create "${dh_tags[@]}" $dh_refs
             docker buildx imagetools create "${gh_tags[@]}" $gh_refs
+
+            if [ "$PUSH_DOCKERHUB" = "true" ]; then
+              dh_image="$DH_NAMESPACE/$service"
+              dh_refs=$(printf "${dh_image}@sha256:%s " $(cat "$digest_dir"/*))
+              dh_tags=(-t "$dh_image:$VERSION" -t "$dh_image:$SHORT_SHA")
+              if [ "$PUSH_LATEST" = "true" ]; then
+                dh_tags+=(-t "$dh_image:latest")
+              fi
+              docker buildx imagetools create "${dh_tags[@]}" $dh_refs
+            fi
           }
 
           inspect_digests dograh-api
