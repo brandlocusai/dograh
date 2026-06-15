@@ -71,7 +71,7 @@ ARG TARGETARCH
 RUN sed -i 's/http:/https:/g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true \
  && apt-get -o Acquire::https::Verify-Peer=false update \
  && apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates curl xz-utils \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
     && case "${TARGETARCH}" in \
          amd64) \
            primary_url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" ; \

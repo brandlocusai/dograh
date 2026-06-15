@@ -100,9 +100,6 @@ jobs:
           - name: linux/amd64
             runner: ubuntu-24.04
             short: amd64
-          - name: linux/arm64
-            runner: ubuntu-24.04-arm
-            short: arm64
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - name: Free Disk Space
