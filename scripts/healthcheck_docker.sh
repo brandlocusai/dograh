@@ -124,8 +124,15 @@ check_docker_containers() {
         return 1
     fi
 
-    # Check critical containers are running
-    CRITICAL_CONTAINERS=("api" "ui" "postgres" "redis" "nginx")
+    # Determine active band (A or B) from rolling update state file
+    local band_file="$DEPLOY_DIR/run/active_docker_band"
+    local active_band="a"
+    if [[ -f "$band_file" ]]; then
+        active_band=$(tr '[:upper:]' '[:lower:]' < "$band_file")
+    fi
+
+    # Check critical containers are running (api/ui use active band suffix)
+    CRITICAL_CONTAINERS=("api-${active_band}" "ui-${active_band}" "postgres" "redis" "nginx")
     local missing=0
 
     for container in "${CRITICAL_CONTAINERS[@]}"; do
@@ -165,13 +172,21 @@ check_api_logs() {
         return 0
     fi
 
+    # Determine active band
+    local band_file="$DEPLOY_DIR/run/active_docker_band"
+    local active_band="a"
+    if [[ -f "$band_file" ]]; then
+        active_band=$(tr '[:upper:]' '[:lower:]' < "$band_file")
+    fi
+    local active_api="api-${active_band}"
+
     # Check last 50 lines of API logs for errors
-    ERROR_COUNT=$($COMPOSE_CMD logs --tail=50 api 2>/dev/null | grep -i "error\|exception\|traceback" | grep -v "DEBUG" | wc -l)
+    ERROR_COUNT=$($COMPOSE_CMD logs --tail=50 "$active_api" 2>/dev/null | grep -i "error\|exception\|traceback" | grep -v "DEBUG" | wc -l)
 
     if [ "$ERROR_COUNT" -gt 5 ]; then
         log_error "Found significant errors in API logs ($ERROR_COUNT lines)"
         log "Recent API logs:"
-        $COMPOSE_CMD logs --tail=20 api 2>&1 | tail -n 20
+        $COMPOSE_CMD logs --tail=20 "$active_api" 2>&1 | tail -n 20
         return 1
     elif [ "$ERROR_COUNT" -gt 0 ]; then
         log_warning "Found minor errors in API logs ($ERROR_COUNT lines) - may be transient"
