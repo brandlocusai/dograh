@@ -215,11 +215,19 @@ dograh_render_remote_nginx_conf "$DEPLOY_DIR" "$TMP_CONF" "$NEW_BAND" "$NEW_BAND
 log "Generated Nginx config (bands: api=$NEW_BAND, ui=$NEW_BAND):"
 grep "server " "$TMP_CONF" | head -6 | tee -a "$LOG_FILE"
 
-# Copy new config into the nginx-generated Docker volume via the running container
+# Write new config into the nginx-generated named volume via a one-shot container.
+# docker cp cannot be used because nginx mounts the volume as :ro.
 if [[ "$DRY_RUN" == "1" ]]; then
-    log_warn "[DRY RUN] Would copy $TMP_CONF → nginx:$NGINX_CONF_DEST and reload"
+    log_warn "[DRY RUN] Would write $TMP_CONF → nginx-generated volume and reload"
 else
-    docker cp "$TMP_CONF" "nginx_https:$NGINX_CONF_DEST"
+    if ! docker run --rm \
+            -v nginx-generated:/nginx-conf \
+            -v "${TMP_CONF}:/tmp/new.conf:ro" \
+            alpine sh -c "cp /tmp/new.conf /nginx-conf/default.conf" 2>&1 | tee -a "$LOG_FILE"; then
+        log_error "Failed to write Nginx config into volume — rolling back"
+        rm -f "$TMP_CONF"
+        rollback
+    fi
     # Test config first
     if ! docker exec nginx_https nginx -t 2>&1 | tee -a "$LOG_FILE"; then
         log_error "Nginx config test FAILED — rolling back"
