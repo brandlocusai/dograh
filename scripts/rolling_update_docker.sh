@@ -215,13 +215,26 @@ dograh_render_remote_nginx_conf "$DEPLOY_DIR" "$TMP_CONF" "$NEW_BAND" "$NEW_BAND
 log "Generated Nginx config (bands: api=$NEW_BAND, ui=$NEW_BAND):"
 grep "server " "$TMP_CONF" | head -6 | tee -a "$LOG_FILE"
 
-# Write new config into the nginx-generated named volume via a one-shot container.
+# Resolve the actual Docker volume name from the running nginx container.
+# Compose prefixes volume names with the project name (e.g. dograh_nginx-generated),
+# so hardcoding the short name would write to the wrong volume.
+NGINX_VOLUME=$(docker inspect nginx_https \
+    --format '{{range .Mounts}}{{if eq .Destination "/etc/nginx/conf.d"}}{{.Name}}{{end}}{{end}}')
+
+if [[ -z "$NGINX_VOLUME" ]]; then
+    log_error "Could not determine nginx config volume name from nginx_https container"
+    rm -f "$TMP_CONF"
+    rollback
+fi
+log "Nginx config volume: $NGINX_VOLUME"
+
+# Write new config into the volume via a one-shot container.
 # docker cp cannot be used because nginx mounts the volume as :ro.
 if [[ "$DRY_RUN" == "1" ]]; then
-    log_warn "[DRY RUN] Would write $TMP_CONF → nginx-generated volume and reload"
+    log_warn "[DRY RUN] Would write $TMP_CONF → $NGINX_VOLUME/default.conf and reload"
 else
     if ! docker run --rm \
-            -v nginx-generated:/nginx-conf \
+            -v "${NGINX_VOLUME}:/nginx-conf" \
             -v "${TMP_CONF}:/tmp/new.conf:ro" \
             alpine sh -c "cp /tmp/new.conf /nginx-conf/default.conf" 2>&1 | tee -a "$LOG_FILE"; then
         log_error "Failed to write Nginx config into volume — rolling back"
