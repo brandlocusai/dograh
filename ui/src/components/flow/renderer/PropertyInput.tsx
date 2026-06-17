@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect, useMemo } from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import type {
     DocumentResponseSchema,
@@ -10,6 +12,7 @@ import { DocumentSelector } from "@/components/flow/DocumentSelector";
 import { MentionTextarea } from "@/components/flow/MentionTextarea";
 import { RecordingSelect } from "@/components/flow/TextOrAudioInput";
 import { ToolSelector } from "@/components/flow/ToolSelector";
+import { WebhookVariablePicker } from "@/components/flow/webhook/VariablePicker";
 import { CredentialSelector, UrlInput } from "@/components/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -336,9 +339,15 @@ function FixedCollectionWidget({
 }
 
 function JsonWidget({ spec, value, onChange }: WidgetProps) {
-    // Render as a textarea with JSON serialization. Invalid JSON keeps the
-    // raw text so the user can finish editing without losing input.
-    const text = (() => {
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [cursorPosition, setCursorPosition] = useState(0);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Track if user is actively editing to prevent value overwrite
+    const isEditingRef = useRef(false);
+
+    // Compute text representation from value (memoized)
+    const text = useMemo(() => {
         if (value === undefined || value === null) return "";
         if (typeof value === "string") return value;
         try {
@@ -346,26 +355,134 @@ function JsonWidget({ spec, value, onChange }: WidgetProps) {
         } catch {
             return String(value);
         }
-    })();
+    }, [value]);
+
+    // Maintain internal text state to allow editing invalid JSON
+    const [internalText, setInternalText] = useState(text);
+    const [jsonError, setJsonError] = useState<string | null>(null);
+
+    // Sync internal text with incoming value changes (only when not editing)
+    useEffect(() => {
+        if (!isEditingRef.current) {
+            setInternalText(text);
+        }
+    }, [text]);
+
+    // For webhook payload_template, show variable picker
+    const isWebhookPayload = spec.name === "payload_template";
+
+    const handleTextChange = (raw: string) => {
+        isEditingRef.current = true;
+        setInternalText(raw);
+
+        // Try to parse and propagate to parent
+        if (raw === "") {
+            setJsonError(null);
+            onChange(undefined);
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setJsonError(null);
+            onChange(parsed);
+        } catch (e) {
+            // Don't propagate invalid JSON to parent
+            // Keep error state to show validation message
+            setJsonError(e instanceof Error ? e.message : "Invalid JSON");
+        }
+    };
+
+    const handleBlur = () => {
+        // Clear editing flag when user leaves the field
+        isEditingRef.current = false;
+    };
+
+    const handleInsertVariable = (variablePath: string) => {
+        const variableText = `{{${variablePath}}}`;
+        const textarea = textareaRef.current;
+
+        if (!textarea) {
+            // Fallback: just copy to clipboard
+            navigator.clipboard.writeText(variableText);
+            toast.info("Copied to clipboard - paste into payload");
+            return;
+        }
+
+        // Get current text value
+        const currentText = internalText;
+        const start = textarea.selectionStart || cursorPosition;
+        const end = textarea.selectionEnd || cursorPosition;
+
+        // Insert variable at cursor position
+        const newText = currentText.substring(0, start) + variableText + currentText.substring(end);
+
+        // Update with the new text
+        handleTextChange(newText);
+
+        // Set cursor position after the inserted variable
+        setTimeout(() => {
+            if (textarea) {
+                const newPosition = start + variableText.length;
+                textarea.focus();
+                textarea.setSelectionRange(newPosition, newPosition);
+                setCursorPosition(newPosition);
+            }
+        }, 0);
+
+        // Show success message
+        toast.success(`Inserted {{${variablePath}}} into payload`);
+    };
 
     return (
         <div className="grid gap-2">
-            <StackedLabel spec={spec} />
+            <div className="flex items-center justify-between">
+                <StackedLabel spec={spec} />
+                {isWebhookPayload && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPickerOpen(true)}
+                        type="button"
+                    >
+                        Browse Variables
+                    </Button>
+                )}
+            </div>
             <Textarea
-                value={text}
-                onChange={(e) => {
-                    const raw = e.target.value;
-                    try {
-                        onChange(raw === "" ? undefined : JSON.parse(raw));
-                    } catch {
-                        // Keep raw string in state until it parses; downstream
-                        // serialization picks it up as-is.
-                        onChange(raw);
-                    }
+                ref={textareaRef}
+                value={internalText}
+                onChange={(e) => handleTextChange(e.target.value)}
+                onBlur={handleBlur}
+                onSelect={(e) => {
+                    // Track cursor position when user clicks or selects
+                    setCursorPosition(e.currentTarget.selectionStart);
+                }}
+                onClick={(e) => {
+                    // Also track on click
+                    setCursorPosition(e.currentTarget.selectionStart);
                 }}
                 placeholder={spec.placeholder ?? "{ }"}
                 className="font-mono text-xs min-h-[120px]"
             />
+            {jsonError && (
+                <p className="text-xs text-destructive">
+                    {jsonError}
+                </p>
+            )}
+            {isWebhookPayload && (
+                <>
+                    <p className="text-xs text-muted-foreground">
+                        Use <code>{"{{variable_path}}"}</code> syntax to insert variables.
+                        Click &quot;Browse Variables&quot; to see available options.
+                    </p>
+                    <WebhookVariablePicker
+                        open={pickerOpen}
+                        onOpenChange={setPickerOpen}
+                        onSelectVariable={handleInsertVariable}
+                    />
+                </>
+            )}
         </div>
     );
 }
