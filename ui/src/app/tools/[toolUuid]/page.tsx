@@ -12,6 +12,7 @@ import {
 import type {
     EndCallConfig,
     HttpApiToolDefinition,
+    McpToolConfig,
     RecordingResponseSchema,
     ToolResponse,
     TransferCallConfig as APITransferCallConfig,
@@ -200,9 +201,7 @@ export default function ToolDetailPage() {
             }
         } else if (tool.category === "mcp") {
             // Populate MCP specific fields
-            const config = tool.definition?.config as
-                | { url?: string; credential_uuid?: string | null; tools_filter?: string[]; headers?: Record<string, string> }
-                | undefined;
+            const config = tool.definition?.config as McpToolConfig | undefined;
             if (config) {
                 setMcpUrl(config.url || "");
                 setMcpCredentialUuid(config.credential_uuid || "");

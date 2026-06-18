@@ -2148,6 +2148,14 @@ export type McpToolConfig = {
      */
     url: string;
     /**
+     * Headers
+     *
+     * Static headers to include with every MCP server request.
+     */
+    headers?: {
+        [key: string]: string;
+    } | null;
+    /**
      * Credential Uuid
      *
      * Reference to an external credential for MCP server auth.
