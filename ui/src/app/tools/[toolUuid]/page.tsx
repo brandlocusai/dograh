@@ -20,6 +20,7 @@ import type {
 import {
     CredentialSelector,
     type HttpMethod,
+    KeyValueEditor,
     type KeyValueItem,
     type ParameterType,
     type PresetToolParameter,
@@ -122,6 +123,7 @@ export default function ToolDetailPage() {
     const [mcpUrl, setMcpUrl] = useState("");
     const [mcpCredentialUuid, setMcpCredentialUuid] = useState("");
     const [mcpToolsFilter, setMcpToolsFilter] = useState("");
+    const [mcpHeaders, setMcpHeaders] = useState<KeyValueItem[]>([]);
 
     // Org-level recordings for audio dropdowns
     const [recordings, setRecordings] = useState<RecordingResponseSchema[]>([]);
@@ -199,7 +201,7 @@ export default function ToolDetailPage() {
         } else if (tool.category === "mcp") {
             // Populate MCP specific fields
             const config = tool.definition?.config as
-                | { url?: string; credential_uuid?: string | null; tools_filter?: string[] }
+                | { url?: string; credential_uuid?: string | null; tools_filter?: string[]; headers?: Record<string, string> }
                 | undefined;
             if (config) {
                 setMcpUrl(config.url || "");
@@ -209,10 +211,23 @@ export default function ToolDetailPage() {
                         ? config.tools_filter.join(", ")
                         : ""
                 );
+
+                // Load headers from config
+                if (config.headers) {
+                    setMcpHeaders(
+                        Object.entries(config.headers).map(([key, value]) => ({
+                            key,
+                            value: value as string,
+                        }))
+                    );
+                } else {
+                    setMcpHeaders([]);
+                }
             } else {
                 setMcpUrl("");
                 setMcpCredentialUuid("");
                 setMcpToolsFilter("");
+                setMcpHeaders([]);
             }
         } else {
             // Populate HTTP API specific fields
@@ -391,10 +406,21 @@ export default function ToolDetailPage() {
                     },
                 };
             } else if (tool.category === "mcp") {
+                // Convert headers array to object
+                const headersObject: Record<string, string> = {};
+                mcpHeaders.filter((h) => h.key && h.value).forEach((h) => {
+                    headersObject[h.key] = h.value;
+                });
+
                 requestBody = {
                     name,
                     description: description || undefined,
-                    definition: createMcpDefinition(mcpUrl, mcpCredentialUuid, mcpToolsFilter),
+                    definition: createMcpDefinition(
+                        mcpUrl,
+                        mcpCredentialUuid,
+                        mcpToolsFilter,
+                        Object.keys(headersObject).length > 0 ? headersObject : undefined
+                    ),
                 };
             } else {
                 // Build HTTP API request body
@@ -721,6 +747,20 @@ const data = await response.json();`;
                                     label="Credential (Optional)"
                                     description="Select a credential for authenticating with the MCP server, or leave empty for no auth."
                                 />
+
+                                <div className="space-y-2 pt-4 border-t">
+                                    <Label>Custom Headers (Optional)</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Add custom headers for MCP server requests. Do not include secrets - use credentials instead.
+                                    </p>
+                                    <KeyValueEditor
+                                        items={mcpHeaders}
+                                        onChange={setMcpHeaders}
+                                        keyPlaceholder="Header name (e.g., X-API-Version)"
+                                        valuePlaceholder="Header value"
+                                        addButtonText="Add Header"
+                                    />
+                                </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="mcp-tools-filter">Tools Filter (Optional)</Label>

@@ -238,6 +238,14 @@ class McpToolConfig(BaseModel):
         description="MCP server URL. Must use http:// or https://.",
         json_schema_extra=_llm_hint("Use the server's streamable HTTP MCP endpoint."),
     )
+    headers: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Static headers to include with every MCP server request.",
+        json_schema_extra=_llm_hint(
+            "Do not place secrets here. Store secrets in the UI credential manager "
+            "and reference them with credential_uuid."
+        ),
+    )
     credential_uuid: Optional[str] = Field(
         default=None,
         description="Reference to an external credential for MCP server auth.",

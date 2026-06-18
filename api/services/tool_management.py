@@ -126,6 +126,7 @@ async def populate_discovered_tools(
             return await discover_mcp_tools(
                 url=cfg["url"],
                 credential=credential,
+                headers=cfg.get("headers"),
                 timeout_secs=cfg["timeout_secs"],
                 sse_read_timeout_secs=cfg["sse_read_timeout_secs"],
             )
@@ -225,6 +226,7 @@ async def refresh_mcp_tool_for_user(
         discovered = await discover_mcp_tools(
             url=cfg["url"],
             credential=credential,
+            headers=cfg.get("headers"),
             timeout_secs=cfg["timeout_secs"],
             sse_read_timeout_secs=cfg["sse_read_timeout_secs"],
         )

@@ -27,6 +27,7 @@ def test_build_streamable_http_params_with_credential():
     params = build_streamable_http_params(
         url="https://acme.example.com/mcp",
         credential=cred,
+        custom_headers=None,
         timeout_secs=30,
         sse_read_timeout_secs=300,
     )
@@ -40,6 +41,7 @@ def test_build_streamable_http_params_no_credential():
     params = build_streamable_http_params(
         url="https://acme.example.com/mcp",
         credential=None,
+        custom_headers=None,
         timeout_secs=10,
         sse_read_timeout_secs=20,
     )
@@ -60,6 +62,7 @@ async def test_session_start_passes_auth_header_to_real_server():
             tool_name="Secure MCP",
             url=base_url,
             credential=cred,
+            headers=None,
             tools_filter=[],
             timeout_secs=10,
             sse_read_timeout_secs=20,
@@ -85,6 +88,7 @@ async def test_session_auth_failure_degrades_not_raises():
             tool_name="Secure MCP",
             url=base_url,
             credential=None,
+            headers=None,
             tools_filter=[],
             timeout_secs=2,
             sse_read_timeout_secs=2,
@@ -105,6 +109,7 @@ async def test_session_start_lists_and_calls_real_server():
             tool_name="Acme MCP",
             url=base_url,
             credential=None,
+            headers=None,
             tools_filter=[],
             timeout_secs=10,
             sse_read_timeout_secs=20,
@@ -129,6 +134,7 @@ async def test_session_tools_filter_applied():
             tool_name="Acme MCP",
             url=base_url,
             credential=None,
+            headers=None,
             tools_filter=["echo"],
             timeout_secs=10,
             sse_read_timeout_secs=20,
@@ -148,6 +154,7 @@ async def test_session_unreachable_degrades_not_raises():
         tool_name="Acme MCP",
         url="http://127.0.0.1:1/mcp",
         credential=None,
+        headers=None,
         tools_filter=[],
         timeout_secs=2,
         sse_read_timeout_secs=2,
@@ -165,6 +172,7 @@ async def test_call_on_unavailable_session_raises():
         tool_name="Acme MCP",
         url="http://127.0.0.1:1/mcp",
         credential=None,
+        headers=None,
         tools_filter=[],
         timeout_secs=2,
         sse_read_timeout_secs=2,
@@ -183,6 +191,7 @@ async def test_call_unknown_function_raises():
             tool_name="Acme MCP",
             url=base_url,
             credential=None,
+            headers=None,
             tools_filter=[],
             timeout_secs=10,
             sse_read_timeout_secs=10,
@@ -203,6 +212,7 @@ async def test_function_schemas_filter_by_raw_name():
             tool_name="Mock MCP",
             url=base_url,
             credential=None,
+            headers=None,
             tools_filter=[],
             timeout_secs=10,
             sse_read_timeout_secs=10,
@@ -232,6 +242,7 @@ async def test_discover_mcp_tools_success():
         tools = await discover_mcp_tools(
             url=base_url,
             credential=None,
+            headers=None,
             timeout_secs=10,
             sse_read_timeout_secs=10,
         )
@@ -248,6 +259,7 @@ async def test_discover_mcp_tools_server_down_returns_empty():
     tools = await discover_mcp_tools(
         url="http://127.0.0.1:1/mcp",
         credential=None,
+        headers=None,
         timeout_secs=1,
         sse_read_timeout_secs=1,
     )

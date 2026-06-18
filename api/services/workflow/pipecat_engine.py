@@ -952,6 +952,7 @@ class PipecatEngine:
                     tool_name=tool.name,
                     url=cfg["url"],
                     credential=credential,
+                    headers=cfg.get("headers"),
                     tools_filter=cfg["tools_filter"],
                     timeout_secs=cfg["timeout_secs"],
                     sse_read_timeout_secs=cfg["sse_read_timeout_secs"],

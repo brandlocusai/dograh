@@ -207,6 +207,7 @@ export function createMcpDefinition(
     url: string,
     credentialUuid: string,
     toolsFilterCsv: string,
+    headers?: Record<string, string>,
 ): McpToolDefinition {
     return {
         schema_version: 1,
@@ -219,6 +220,7 @@ export function createMcpDefinition(
                 .split(",")
                 .map((s) => s.trim())
                 .filter((s) => s.length > 0),
+            headers: headers && Object.keys(headers).length > 0 ? headers : undefined,
         },
     };
 }

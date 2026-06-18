@@ -29,18 +29,26 @@ def build_streamable_http_params(
     *,
     url: str,
     credential: Optional["ExternalCredentialModel"],
+    custom_headers: Optional[Dict[str, str]],
     timeout_secs: int,
     sse_read_timeout_secs: int,
 ) -> StreamableHttpParameters:
-    """Build Pipecat/MCP streamable-HTTP params, injecting the auth header
-    from an ExternalCredentialModel (reuses the http_api credential path)."""
-    headers: Optional[Dict[str, str]] = None
+    """Build Pipecat/MCP streamable-HTTP params, merging custom headers with auth."""
+    headers: Dict[str, str] = {}
+
+    # Add custom headers first
+    if custom_headers:
+        headers.update(custom_headers)
+
+    # Auth headers override custom headers on conflicts
     if credential is not None:
         auth = build_auth_header(credential)
-        headers = auth or None
+        if auth:
+            headers.update(auth)
+
     return StreamableHttpParameters(
         url=url,
-        headers=headers,
+        headers=headers if headers else None,
         timeout=timedelta(seconds=timeout_secs),
         sse_read_timeout=timedelta(seconds=sse_read_timeout_secs),
     )
@@ -56,6 +64,7 @@ class McpToolSession:
         tool_name: str,
         url: str,
         credential: Optional["ExternalCredentialModel"],
+        headers: Optional[Dict[str, str]],
         tools_filter: List[str],
         timeout_secs: int,
         sse_read_timeout_secs: int,
@@ -64,6 +73,7 @@ class McpToolSession:
         self._tool_name = tool_name
         self._url = url
         self._credential = credential
+        self._headers = headers
         # An empty list is intentionally treated as "no filter (expose all
         # tools)" — Pipecat's MCPClient applies a filter only when this is a
         # non-empty list, so [] and None are equivalent ("all tools").
@@ -89,6 +99,7 @@ class McpToolSession:
             params = build_streamable_http_params(
                 url=self._url,
                 credential=self._credential,
+                custom_headers=self._headers,
                 timeout_secs=self._timeout_secs,
                 sse_read_timeout_secs=self._sse_read_timeout_secs,
             )
@@ -234,6 +245,7 @@ async def discover_mcp_tools(
     *,
     url: str,
     credential: Optional["ExternalCredentialModel"],
+    headers: Optional[Dict[str, str]],
     timeout_secs: int,
     sse_read_timeout_secs: int,
 ) -> List[Dict[str, str]]:
@@ -245,6 +257,7 @@ async def discover_mcp_tools(
         tool_name="discover",
         url=url,
         credential=credential,
+        headers=headers,
         tools_filter=[],
         timeout_secs=timeout_secs,
         sse_read_timeout_secs=sse_read_timeout_secs,

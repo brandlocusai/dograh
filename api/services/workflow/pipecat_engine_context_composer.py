@@ -46,12 +46,59 @@ RULES:
 - *NEVER* mix modes in a single response, since we rely on the markers to decide whether to play using TTS or Pre-recorded audio."""
 
 
+def _compose_tools_section(tool_schemas: list) -> str:
+    """Generate an AVAILABLE TOOLS section for the system prompt.
+
+    Lists all registered tools with their names and descriptions so the agent
+    knows exactly what tools it can call (especially important for MCP tools
+    which have namespaced names like mcp__server_name__tool_name).
+
+    Args:
+        tool_schemas: List of FunctionSchema objects with name and description.
+
+    Returns:
+        Formatted tools section string, or empty string if no tools.
+    """
+    if not tool_schemas:
+        return ""
+
+    # Filter out transition functions (they start with edge_)
+    actual_tools = [
+        schema for schema in tool_schemas
+        if not getattr(schema, 'name', '').startswith('edge_')
+    ]
+
+    if not actual_tools:
+        return ""
+
+    lines = ["AVAILABLE TOOLS:"]
+    lines.append("You have access to the following tools. Use the exact function names shown below:")
+    lines.append("")
+
+    for schema in actual_tools:
+        name = getattr(schema, 'name', '')
+        description = getattr(schema, 'description', 'No description')
+
+        # For MCP tools, highlight the namespaced name
+        if name.startswith('mcp__'):
+            lines.append(f"- {name}")
+            lines.append(f"  Description: {description}")
+        else:
+            lines.append(f"- {name}: {description}")
+
+    lines.append("")
+    lines.append("IMPORTANT: Always use the exact function names listed above. Do not modify or simplify the names.")
+
+    return "\n".join(lines)
+
+
 def compose_system_prompt_for_node(
     *,
     node: "Node",
     workflow: "WorkflowGraph",
     format_prompt: Callable[[str], str],
     has_recordings: bool,
+    tool_schemas: Optional[list] = None,
 ) -> str:
     """Compose the full system prompt text for a workflow node.
 
@@ -64,6 +111,7 @@ def compose_system_prompt_for_node(
         workflow: The full workflow graph (needed for global node prompt).
         format_prompt: Callable to render template variables in prompts.
         has_recordings: Whether any node in the workflow uses recordings.
+        tool_schemas: Optional list of FunctionSchema objects for available tools (unused for now).
 
     Returns:
         The composed system prompt text.
@@ -76,6 +124,13 @@ def compose_system_prompt_for_node(
     formatted_node_prompt = format_prompt(node.prompt)
 
     parts = [p for p in (global_prompt, formatted_node_prompt) if p]
+
+    # DISABLED: Auto-injection of available tools
+    # Uncomment to re-enable automatic tool context injection
+    # if tool_schemas:
+    #     tools_section = _compose_tools_section(tool_schemas)
+    #     if tools_section:
+    #         parts.append(tools_section)
 
     if has_recordings and "RECORDING_ID:" in formatted_node_prompt:
         parts.append(RECORDING_RESPONSE_MODE_INSTRUCTIONS)

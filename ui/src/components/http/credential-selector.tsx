@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { listCredentialsApiV1CredentialsGet } from "@/client";
@@ -36,6 +37,7 @@ export function CredentialSelector({
     description = "Select a credential for authentication, or leave empty for no auth.",
     showLabel = true,
 }: CredentialSelectorProps) {
+    const router = useRouter();
     useAuth();
 
     const [credentials, setCredentials] = useState<CredentialResponse[]>([]);
@@ -75,7 +77,18 @@ export function CredentialSelector({
         <div className="grid gap-2">
             {showLabel && (
                 <>
-                    <Label>{label}</Label>
+                    <div className="flex items-center justify-between">
+                        <Label>{label}</Label>
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => router.push("/settings")}
+                            type="button"
+                        >
+                            Manage Credentials →
+                        </Button>
+                    </div>
                     {description && (
                         <Label className="text-xs text-muted-foreground">
                             {description}

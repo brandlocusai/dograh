@@ -2,6 +2,7 @@
 
 import { ExternalLink } from "lucide-react";
 
+import { CredentialManagement } from "@/components/CredentialManagement";
 import { MCPSection } from "@/components/MCPSection";
 import { TelemetrySection } from "@/components/TelemetrySection";
 import {
@@ -22,6 +23,18 @@ export default function SettingsPage() {
             Manage your platform configuration and integrations.
           </p>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Credentials</CardTitle>
+            <CardDescription>
+              Manage authentication credentials for HTTP API and MCP tools.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CredentialManagement />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
