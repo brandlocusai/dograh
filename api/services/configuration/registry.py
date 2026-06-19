@@ -787,6 +787,46 @@ class DeepgramTTSConfiguration(BaseServiceConfiguration):
 
 ELEVENLABS_TTS_MODELS = ["eleven_flash_v2_5"]
 
+# ElevenLabs supports 29+ languages - prioritizing English and Urdu
+ELEVENLABS_TTS_LANGUAGES = (
+    # Priority languages
+    "en",  # English
+    "ur",  # Urdu
+    # Other widely used languages
+    "ar",  # Arabic
+    "es",  # Spanish
+    "fr",  # French
+    "de",  # German
+    "it",  # Italian
+    "pt",  # Portuguese
+    "zh",  # Chinese
+    "ja",  # Japanese
+    "ko",  # Korean
+    "hi",  # Hindi
+    "pl",  # Polish
+    "nl",  # Dutch
+    "ru",  # Russian
+    "tr",  # Turkish
+    "id",  # Indonesian
+    "sv",  # Swedish
+    "fil",  # Filipino
+    # Additional languages
+    "bg",  # Bulgarian
+    "cs",  # Czech
+    "da",  # Danish
+    "el",  # Greek
+    "fi",  # Finnish
+    "hr",  # Croatian
+    "hu",  # Hungarian
+    "ms",  # Malay
+    "no",  # Norwegian
+    "ro",  # Romanian
+    "sk",  # Slovak
+    "ta",  # Tamil
+    "uk",  # Ukrainian
+    "vi",  # Vietnamese
+)
+
 
 @register_tts
 class ElevenlabsTTSConfiguration(BaseServiceConfiguration):
@@ -795,6 +835,15 @@ class ElevenlabsTTSConfiguration(BaseServiceConfiguration):
     voice: str = Field(
         default="21m00Tcm4TlvDq8ikWAM",
         description="ElevenLabs voice ID from your Voice Library.",
+    )
+    language: str = Field(
+        default="en",
+        description="Language for synthesis. Multilingual voices support multiple languages.",
+        json_schema_extra={
+            "examples": ELEVENLABS_TTS_LANGUAGES,
+            "allow_custom_input": True,
+            "docs_url": "https://elevenlabs.io/docs/speech-synthesis/supported-languages",
+        },
     )
     speed: float = Field(default=1.0, ge=0.1, le=2.0, description="Speed of the voice.")
     model: str = Field(
@@ -841,6 +890,7 @@ class GoogleTTSConfiguration(BaseTTSConfiguration):
         json_schema_extra={
             "examples": GOOGLE_TTS_LANGUAGES,
             "allow_custom_input": True,
+            "docs_url": "https://cloud.google.com/text-to-speech/docs/voices",
         },
     )
     speed: float = Field(
@@ -959,7 +1009,10 @@ class SarvamTTSConfiguration(BaseTTSConfiguration):
     language: str = Field(
         default="hi-IN",
         description="BCP-47 Indian-language code (e.g. hi-IN, en-IN).",
-        json_schema_extra={"examples": SARVAM_LANGUAGES},
+        json_schema_extra={
+            "examples": SARVAM_LANGUAGES,
+            "docs_url": "https://docs.sarvam.ai/api-reference-docs/text-to-speech-api/language-and-voices",
+        },
     )
 
 
@@ -1110,6 +1163,7 @@ class AzureSpeechTTSConfiguration(BaseTTSConfiguration):
         json_schema_extra={
             "examples": AZURE_SPEECH_TTS_LANGUAGES,
             "allow_custom_input": True,
+            "docs_url": "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support",
         },
     )
     speed: float = Field(
@@ -1159,6 +1213,7 @@ class DeepgramSTTConfiguration(BaseSTTConfiguration):
                 "nova-3-general": DEEPGRAM_LANGUAGES,
                 "flux-general-en": ("en",),
             },
+            "docs_url": "https://developers.deepgram.com/docs/models-languages-overview",
         },
     )
 
@@ -1179,6 +1234,110 @@ class CartesiaSTTConfiguration(BaseSTTConfiguration):
 
 OPENAI_STT_MODELS = ["gpt-4o-transcribe"]
 
+# OpenAI Whisper supports 99 languages - prioritizing English and Urdu
+OPENAI_STT_LANGUAGES = (
+    # Priority languages
+    "en",  # English
+    "ur",  # Urdu
+    # Other widely used languages
+    "es",  # Spanish
+    "fr",  # French
+    "de",  # German
+    "it",  # Italian
+    "pt",  # Portuguese
+    "zh",  # Chinese
+    "ja",  # Japanese
+    "ko",  # Korean
+    "ar",  # Arabic
+    "hi",  # Hindi
+    "ru",  # Russian
+    "tr",  # Turkish
+    "nl",  # Dutch
+    "pl",  # Polish
+    "sv",  # Swedish
+    "id",  # Indonesian
+    "vi",  # Vietnamese
+    "th",  # Thai
+    # Additional languages (alphabetical)
+    "af",  # Afrikaans
+    "am",  # Amharic
+    "as",  # Assamese
+    "az",  # Azerbaijani
+    "ba",  # Bashkir
+    "be",  # Belarusian
+    "bg",  # Bulgarian
+    "bn",  # Bengali
+    "bo",  # Tibetan
+    "br",  # Breton
+    "bs",  # Bosnian
+    "ca",  # Catalan
+    "cs",  # Czech
+    "cy",  # Welsh
+    "da",  # Danish
+    "el",  # Greek
+    "et",  # Estonian
+    "eu",  # Basque
+    "fa",  # Persian
+    "fi",  # Finnish
+    "fo",  # Faroese
+    "gl",  # Galician
+    "gu",  # Gujarati
+    "ha",  # Hausa
+    "haw",  # Hawaiian
+    "he",  # Hebrew
+    "hr",  # Croatian
+    "ht",  # Haitian Creole
+    "hu",  # Hungarian
+    "hy",  # Armenian
+    "is",  # Icelandic
+    "jw",  # Javanese
+    "ka",  # Georgian
+    "kk",  # Kazakh
+    "km",  # Khmer
+    "kn",  # Kannada
+    "la",  # Latin
+    "lb",  # Luxembourgish
+    "ln",  # Lingala
+    "lo",  # Lao
+    "lt",  # Lithuanian
+    "lv",  # Latvian
+    "mg",  # Malagasy
+    "mi",  # Maori
+    "mk",  # Macedonian
+    "ml",  # Malayalam
+    "mn",  # Mongolian
+    "mr",  # Marathi
+    "ms",  # Malay
+    "mt",  # Maltese
+    "my",  # Myanmar
+    "ne",  # Nepali
+    "no",  # Norwegian
+    "oc",  # Occitan
+    "pa",  # Punjabi
+    "ps",  # Pashto
+    "ro",  # Romanian
+    "sa",  # Sanskrit
+    "sd",  # Sindhi
+    "si",  # Sinhala
+    "sk",  # Slovak
+    "sl",  # Slovenian
+    "sn",  # Shona
+    "so",  # Somali
+    "sq",  # Albanian
+    "sr",  # Serbian
+    "su",  # Sundanese
+    "sw",  # Swahili
+    "ta",  # Tamil
+    "te",  # Telugu
+    "tg",  # Tajik
+    "tl",  # Tagalog
+    "tt",  # Tatar
+    "uk",  # Ukrainian
+    "uz",  # Uzbek
+    "yi",  # Yiddish
+    "yo",  # Yoruba
+)
+
 
 @register_stt
 class OpenAISTTConfiguration(BaseSTTConfiguration):
@@ -1188,6 +1347,15 @@ class OpenAISTTConfiguration(BaseSTTConfiguration):
         default="gpt-4o-transcribe",
         description="OpenAI transcription model.",
         json_schema_extra={"examples": OPENAI_STT_MODELS},
+    )
+    language: str = Field(
+        default="en",
+        description="Language code for transcription. Improves accuracy when specified.",
+        json_schema_extra={
+            "examples": OPENAI_STT_LANGUAGES,
+            "allow_custom_input": True,
+            "docs_url": "https://platform.openai.com/docs/guides/speech-to-text",
+        },
     )
     base_url: str = Field(
         default="https://api.openai.com/v1",
@@ -1278,6 +1446,7 @@ class SarvamSTTConfiguration(BaseSTTConfiguration):
                 "saarika:v2.5": SARVAM_STT_LANGUAGES_V25,
                 "saaras:v3": SARVAM_STT_LANGUAGES_V3,
             },
+            "docs_url": "https://docs.sarvam.ai/api-reference-docs/speech-to-text-api/language-support",
         },
     )
 
@@ -1392,6 +1561,7 @@ class AzureSpeechSTTConfiguration(BaseSTTConfiguration):
         json_schema_extra={
             "examples": AZURE_SPEECH_STT_LANGUAGES,
             "allow_custom_input": True,
+            "docs_url": "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support",
         },
     )
 

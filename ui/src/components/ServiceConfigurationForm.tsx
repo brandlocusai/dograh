@@ -367,6 +367,33 @@ export function ServiceConfigurationForm({
         }
     }, [sttModel, serviceProviders.stt, setValue, getValues, schemas]);
 
+    // Reset TTS language when model changes if the provider has model-dependent language options
+    useEffect(() => {
+        const languageSchema = schemas?.tts?.[serviceProviders.tts]?.properties?.language;
+        const modelOptions = languageSchema?.model_options;
+        if (!modelOptions || !ttsModel) return;
+
+        const validLanguages = modelOptions[ttsModel as string];
+        const currentLanguage = getValues("tts_language") as string;
+        if (validLanguages && currentLanguage && !validLanguages.includes(currentLanguage)) {
+            setValue("tts_language", validLanguages[0], { shouldDirty: true });
+        }
+    }, [ttsModel, serviceProviders.tts, setValue, getValues, schemas]);
+
+    // Reset Realtime language when model changes if the provider has model-dependent language options
+    const realtimeModel = watch("realtime_model");
+    useEffect(() => {
+        const languageSchema = schemas?.realtime?.[serviceProviders.realtime]?.properties?.language;
+        const modelOptions = languageSchema?.model_options;
+        if (!modelOptions || !realtimeModel) return;
+
+        const validLanguages = modelOptions[realtimeModel as string];
+        const currentLanguage = getValues("realtime_language") as string;
+        if (validLanguages && currentLanguage && !validLanguages.includes(currentLanguage)) {
+            setValue("realtime_language", validLanguages[0], { shouldDirty: true });
+        }
+    }, [realtimeModel, serviceProviders.realtime, setValue, getValues, schemas]);
+
     const handleProviderChange = (service: ServiceSegment, providerName: string) => {
         if (!providerName) return;
 
@@ -743,7 +770,7 @@ export function ServiceConfigurationForm({
         if (dropdownOptions && dropdownOptions.length > 0) {
             const getDisplayName = (value: string) => {
                 if (field === "language") {
-                    return LANGUAGE_DISPLAY_NAMES[value] || value;
+                    return LANGUAGE_DISPLAY_NAMES[value] || value.toUpperCase();
                 }
                 if (field === "voice") {
                     return VOICE_DISPLAY_NAMES[value] || value.charAt(0).toUpperCase() + value.slice(1);

@@ -127,6 +127,17 @@ def create_stt_service(
         if base_url:
             _validate_runtime_service_url(base_url, "base_url")
             kwargs["base_url"] = base_url
+
+        # Extract language if configured
+        language = getattr(user_config.stt, "language", None)
+        if language:
+            try:
+                # Convert to Language enum (e.g., "en" -> Language.EN)
+                kwargs["language"] = Language(language.upper().replace("-", "_"))
+            except (ValueError, AttributeError):
+                # Fallback to default if invalid language code
+                pass
+
         return OpenAISTTService(
             api_key=user_config.stt.api_key,
             settings=OpenAISTTSettings(model=user_config.stt.model),
@@ -357,17 +368,31 @@ def create_tts_service(user_config, audio_config: "AudioConfig"):
         elevenlabs_url = user_config.tts.base_url.replace("https://", "wss://").replace(
             "http://", "ws://"
         )
+
+        # Build settings with optional language
+        settings_kwargs = {
+            "voice": voice_id,
+            "model": user_config.tts.model,
+            "stability": 0.8,
+            "speed": user_config.tts.speed,
+            "similarity_boost": 0.75,
+        }
+
+        # Extract language if configured
+        language = getattr(user_config.tts, "language", None)
+        if language:
+            try:
+                # Convert to Language enum (e.g., "en" -> Language.EN)
+                settings_kwargs["language"] = Language(language.upper().replace("-", "_"))
+            except (ValueError, AttributeError):
+                # Skip language if invalid
+                pass
+
         return ElevenLabsTTSService(
             reconnect_on_error=False,
             api_key=user_config.tts.api_key,
             url=elevenlabs_url,
-            settings=ElevenLabsTTSSettings(
-                voice=voice_id,
-                model=user_config.tts.model,
-                stability=0.8,
-                speed=user_config.tts.speed,
-                similarity_boost=0.75,
-            ),
+            settings=ElevenLabsTTSSettings(**settings_kwargs),
             text_filters=[xml_function_tag_filter],
             skip_aggregator_types=["recording_router", "recording"],
             silence_time_s=1.0,
