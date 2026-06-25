@@ -785,7 +785,13 @@ class DeepgramTTSConfiguration(BaseServiceConfiguration):
             return "aura-2"
 
 
-ELEVENLABS_TTS_MODELS = ["eleven_flash_v2_5"]
+ELEVENLABS_TTS_MODELS = [
+    "eleven_flash_v2_5",
+    "eleven_multilingual_v2",
+    "eleven_v3",
+    "eleven_turbo_v2",
+    "eleven_monolingual_v1",
+]
 
 # ElevenLabs supports 29+ languages - prioritizing English and Urdu
 ELEVENLABS_TTS_LANGUAGES = (
