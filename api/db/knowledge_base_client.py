@@ -9,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from api.db.base_client import BaseDBClient
-from api.db.models import KnowledgeBaseChunkModel, KnowledgeBaseDocumentModel
+from api.db.models import (
+    KnowledgeBaseChunkModel,
+    KnowledgeBaseDocumentModel,
+    KnowledgeBaseNodeModel,
+    KnowledgeBaseRelationshipModel,
+)
 
 
 class KnowledgeBaseClient(BaseDBClient):
@@ -481,9 +486,10 @@ class KnowledgeBaseClient(BaseDBClient):
         document_uuid: str,
         organization_id: int,
     ) -> bool:
-        """Soft delete a document by setting is_active to False.
+        """Hard delete a document from the database.
 
-        This will also cascade delete all chunks via the database foreign key.
+        This will also cascade delete all chunks, nodes, and relationships
+        via database foreign keys and ORM relationships.
 
         Args:
             document_uuid: The unique document UUID
@@ -504,11 +510,11 @@ class KnowledgeBaseClient(BaseDBClient):
             if not document:
                 return False
 
-            document.is_active = False
+            await session.delete(document)
             await session.commit()
 
             logger.info(
-                f"Deleted document {document_uuid} for organization {organization_id}"
+                f"Permanently deleted document {document_uuid} for organization {organization_id}"
             )
             return True
 
@@ -549,3 +555,141 @@ class KnowledgeBaseClient(BaseDBClient):
             ".md": "text/markdown",
         }
         return mime_types.get(extension, "application/octet-stream")
+
+    async def create_nodes_batch(
+        self,
+        nodes: List[KnowledgeBaseNodeModel],
+    ) -> List[KnowledgeBaseNodeModel]:
+        """Create multiple knowledge graph nodes in a batch.
+
+        Args:
+            nodes: List of KnowledgeBaseNodeModel instances
+
+        Returns:
+            List of created nodes with database IDs
+        """
+        async with self.async_session() as session:
+            session.add_all(nodes)
+            await session.commit()
+            for node in nodes:
+                await session.refresh(node)
+            logger.info(f"Created {len(nodes)} knowledge base nodes")
+            return nodes
+
+    async def create_relationships_batch(
+        self,
+        relationships: List[KnowledgeBaseRelationshipModel],
+    ) -> List[KnowledgeBaseRelationshipModel]:
+        """Create multiple relationships in a batch.
+
+        Args:
+            relationships: List of KnowledgeBaseRelationshipModel instances
+
+        Returns:
+            List of created relationships
+        """
+        async with self.async_session() as session:
+            session.add_all(relationships)
+            await session.commit()
+            for rel in relationships:
+                await session.refresh(rel)
+            logger.info(f"Created {len(relationships)} knowledge base relationships")
+            return relationships
+
+    async def search_graph_nodes_and_relationships(
+        self,
+        query_embedding: List[float],
+        organization_id: int,
+        document_uuids: List[str],
+        limit: int = 5,
+    ) -> dict:
+        """Search for nodes using vector similarity, and fetch their 1-hop relationships.
+
+        Args:
+            query_embedding: Embedding vector for the user query
+            organization_id: Scope of organization
+            document_uuids: Scope of documents to look into
+            limit: Maximum number of similar nodes to query
+
+        Returns:
+            Dictionary with matching nodes and their relationships
+        """
+        async with self.async_session() as session:
+            connection = await session.connection()
+            raw_connection = await connection.get_raw_connection()
+
+            # 1. Search for matching nodes using vector similarity
+            where_conditions = [
+                "n.organization_id = $2",
+                "d.is_active = true",
+                "d.document_uuid = ANY($4::varchar[])"
+            ]
+            params = [
+                None,  # $1 will be query_embedding_str
+                organization_id,
+                limit,  # $3 is limit
+                document_uuids,  # $4 is list of uuids
+            ]
+
+            query_nodes_sql = f"""
+                SELECT
+                    n.id,
+                    n.name,
+                    n.type,
+                    n.properties,
+                    n.document_id,
+                    d.filename,
+                    d.document_uuid,
+                    1 - (n.embedding <=> $1::vector) as similarity
+                FROM knowledge_base_nodes n
+                JOIN knowledge_base_documents d ON n.document_id = d.id
+                WHERE {" AND ".join(where_conditions)}
+                ORDER BY n.embedding <=> $1::vector
+                LIMIT $3
+            """
+
+            embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+            params[0] = embedding_str
+
+            node_rows = await raw_connection.driver_connection.fetch(
+                query_nodes_sql,
+                *params,
+            )
+
+            nodes = [dict(row) for row in node_rows]
+            if not nodes:
+                return {"nodes": [], "relationships": []}
+
+            node_names = list({n["name"] for n in nodes})
+            document_ids = list({n["document_id"] for n in nodes})
+
+            # 2. Fetch all relationships where source or target is in node_names
+            # Scoped to the same documents
+            query_rels_sql = """
+                SELECT
+                    r.source,
+                    r.target,
+                    r.type,
+                    r.properties,
+                    d.filename
+                FROM knowledge_base_relationships r
+                JOIN knowledge_base_documents d ON r.document_id = d.id
+                WHERE r.organization_id = $1
+                  AND r.document_id = ANY($2::integer[])
+                  AND (r.source = ANY($3::varchar[]) OR r.target = ANY($3::varchar[]))
+            """
+
+            rel_rows = await raw_connection.driver_connection.fetch(
+                query_rels_sql,
+                organization_id,
+                document_ids,
+                node_names,
+            )
+
+            relationships = [dict(row) for row in rel_rows]
+
+            return {
+                "nodes": nodes,
+                "relationships": relationships
+            }
+

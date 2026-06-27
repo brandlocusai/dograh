@@ -229,31 +229,49 @@ async def _perform_retrieval(
     try:
         chunks = []
 
-        # Check for full_document mode documents and return their full text
+        kg_uuids = []
+        chunked_uuids = []
+        full_text_docs = []
+
+        # Separating document types by retrieval_mode
         if document_uuids:
-            full_text_docs = await db_client.get_full_text_documents(
-                organization_id=organization_id,
-                document_uuids=document_uuids,
-            )
-            for doc in full_text_docs:
-                if doc.full_text:
-                    chunks.append(
-                        {
-                            "text": doc.full_text,
-                            "filename": doc.filename,
-                            "similarity": 1.0,
-                            "chunk_index": 0,
-                        }
-                    )
+            async with db_client.async_session() as session:
+                from sqlalchemy import select
+                from api.db.models import KnowledgeBaseDocumentModel
+                stmt = select(KnowledgeBaseDocumentModel).where(
+                    KnowledgeBaseDocumentModel.document_uuid.in_(document_uuids),
+                    KnowledgeBaseDocumentModel.organization_id == organization_id,
+                    KnowledgeBaseDocumentModel.is_active == True,
+                    KnowledgeBaseDocumentModel.processing_status == "completed",
+                )
+                res = await session.execute(stmt)
+                docs = list(res.scalars().all())
 
-            # Filter out full_document UUIDs so vector search only hits chunked docs
-            full_doc_uuids = {doc.document_uuid for doc in full_text_docs}
-            chunked_uuids = [u for u in document_uuids if u not in full_doc_uuids]
+            for doc in docs:
+                if doc.retrieval_mode == "full_document":
+                    full_text_docs.append(doc)
+                elif doc.retrieval_mode == "knowledge_graph":
+                    kg_uuids.append(doc.document_uuid)
+                else:
+                    chunked_uuids.append(doc.document_uuid)
         else:
-            chunked_uuids = document_uuids
+            # Fall back to None so search is performed on all organization chunked docs if no filter specified
+            chunked_uuids = None
 
-        # Perform vector similarity search on chunked documents
-        if chunked_uuids is None or len(chunked_uuids) > 0:
+        # Check for full_document mode documents and return their full text
+        for doc in full_text_docs:
+            if doc.full_text:
+                chunks.append(
+                    {
+                        "text": doc.full_text,
+                        "filename": doc.filename,
+                        "similarity": 1.0,
+                        "chunk_index": 0,
+                    }
+                )
+
+        # Build embedding service if we need to search chunked or knowledge graph documents
+        if (chunked_uuids is None or len(chunked_uuids) > 0) or (kg_uuids and len(kg_uuids) > 0):
             if not embeddings_api_key:
                 raise ValueError(
                     "Embeddings API key not configured. Please set your API key in "
@@ -279,22 +297,66 @@ async def _perform_retrieval(
                     base_url=embeddings_base_url,
                 )
 
-            results = await embedding_service.search_similar_chunks(
-                query=query,
-                organization_id=organization_id,
-                limit=limit,
-                document_uuids=chunked_uuids if chunked_uuids else None,
-            )
+            # Perform vector similarity search on chunked documents
+            if chunked_uuids is None or len(chunked_uuids) > 0:
+                results = await embedding_service.search_similar_chunks(
+                    query=query,
+                    organization_id=organization_id,
+                    limit=limit,
+                    document_uuids=chunked_uuids,
+                )
 
-            for result in results:
-                chunk_info = {
-                    "text": result.get("contextualized_text")
-                    or result.get("chunk_text"),
-                    "filename": result.get("filename"),
-                    "similarity": round(result.get("similarity", 0), 4),
-                    "chunk_index": result.get("chunk_index"),
-                }
-                chunks.append(chunk_info)
+                for result in results:
+                    chunk_info = {
+                        "text": result.get("contextualized_text")
+                        or result.get("chunk_text"),
+                        "filename": result.get("filename"),
+                        "similarity": round(result.get("similarity", 0), 4),
+                        "chunk_index": result.get("chunk_index"),
+                    }
+                    chunks.append(chunk_info)
+
+            # Perform Knowledge Graph search on graph documents
+            if kg_uuids:
+                query_embeddings = await embedding_service.embed_texts([query])
+                if query_embeddings:
+                    query_embedding = query_embeddings[0]
+                    graph_results = await db_client.search_graph_nodes_and_relationships(
+                        query_embedding=query_embedding,
+                        organization_id=organization_id,
+                        document_uuids=kg_uuids,
+                        limit=limit,
+                    )
+
+                    matched_nodes = graph_results.get("nodes", [])
+                    matched_relationships = graph_results.get("relationships", [])
+
+                    if matched_nodes or matched_relationships:
+                        matched_nodes_str = ", ".join(
+                            [f"{n['name']} ({n['type'] or 'Entity'})" for n in matched_nodes]
+                        )
+
+                        rel_facts = []
+                        for rel in matched_relationships:
+                            prop_str = f" ({json.dumps(rel['properties'])})" if rel['properties'] else ""
+                            rel_facts.append(
+                                f"- {rel['source']} --[{rel['type']}]--> {rel['target']}{prop_str} (Source: {rel['filename']})"
+                            )
+
+                        fact_text = f"Identified entities: {matched_nodes_str}\n\nExtracted relationships:\n"
+                        if rel_facts:
+                            fact_text += "\n".join(rel_facts)
+                        else:
+                            fact_text += "No relationships found for these entities."
+
+                        chunks.append(
+                            {
+                                "text": fact_text,
+                                "filename": "Knowledge Graph",
+                                "similarity": 1.0,
+                                "chunk_index": 0,
+                            }
+                        )
 
         logger.info(
             f"Knowledge base retrieval: query='{query}', "

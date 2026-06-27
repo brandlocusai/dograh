@@ -1,23 +1,66 @@
-"""ARQ background task for processing knowledge base documents.
-
-Document conversion and chunking live in the Model Proxy Service (MPS);
-this task downloads the file from S3, calls MPS, then handles the embedding
-and DB writes locally.
-"""
-
+import json
 import os
 import tempfile
 
 from loguru import logger
 
 from api.db import db_client
-from api.db.models import KnowledgeBaseChunkModel
+from api.db.models import (
+    KnowledgeBaseChunkModel,
+    KnowledgeBaseNodeModel,
+    KnowledgeBaseRelationshipModel,
+)
 from api.services.configuration.registry import ServiceProviders
 from api.services.gen_ai import AzureOpenAIEmbeddingService, OpenAIEmbeddingService
 from api.services.mps_service_key_client import mps_service_key_client
 from api.services.storage import storage_fs
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+
+
+def get_langchain_chat_model(user_config):
+    """Initialize a LangChain chat model based on the user's configuration."""
+    if not user_config.llm:
+        raise ValueError(
+            "LLM configuration not found. Please configure your LLM settings "
+            "under Model Configurations > LLM to process Knowledge Graph documents."
+        )
+
+    provider = user_config.llm.provider
+    api_key = user_config.llm.api_key
+    model = user_config.llm.model
+    base_url = getattr(user_config.llm, "base_url", None)
+    endpoint = getattr(user_config.llm, "endpoint", None)
+    api_version = getattr(user_config.llm, "api_version", None)
+
+    if not api_key:
+        raise ValueError(
+            f"LLM API key not configured for provider '{provider}'. "
+            "Please configure your LLM settings under Model Configurations > LLM."
+        )
+
+    if provider == "azure":
+        from langchain_openai import AzureChatOpenAI
+        return AzureChatOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version=api_version or "2024-02-15-preview",
+            azure_deployment=model,
+            temperature=0,
+        )
+    else:
+        # Default to ChatOpenAI (handles OpenAI, Groq, OpenRouter, Speaches etc.)
+        from langchain_openai import ChatOpenAI
+        kwargs = {}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return ChatOpenAI(
+            api_key=api_key,
+            model=model or "gpt-4o-mini",
+            temperature=0,
+            **kwargs,
+        )
+
 
 
 async def process_knowledge_base_document(
@@ -121,12 +164,15 @@ async def process_knowledge_base_document(
             mime_type=mime_type,
         )
 
-        logger.info(f"Delegating document processing to MPS (mode={retrieval_mode})")
+        # Map retrieval_mode for MPS. MPS does not have a native knowledge_graph mode,
+        # so we ask it to parse as chunked, and we extract entities/relations locally.
+        mps_mode = "chunked" if retrieval_mode == "knowledge_graph" else retrieval_mode
+        logger.info(f"Delegating document processing to MPS (mode={mps_mode})")
         mps_response = await mps_service_key_client.process_document(
             file_path=temp_file_path,
             filename=filename,
             content_type=mime_type or "application/octet-stream",
-            retrieval_mode=retrieval_mode,
+            retrieval_mode=mps_mode,
             max_tokens=max_tokens,
             organization_id=organization_id,
             created_by=created_by_provider_id,
@@ -146,6 +192,186 @@ async def process_knowledge_base_document(
             logger.info(
                 f"Successfully processed full_document {document_id}. "
                 f"Text length: {len(full_text)} chars"
+            )
+            return
+
+        elif retrieval_mode == "knowledge_graph":
+            # Knowledge Graph mode: fetch LLM configurations and embedding configuration.
+            embeddings_provider = None
+            embeddings_api_key = None
+            embeddings_model = None
+            embeddings_base_url = None
+            embeddings_endpoint = None
+            embeddings_api_version = None
+            user_config = None
+
+            if document.created_by:
+                user_config = await db_client.get_user_configurations(document.created_by)
+                if user_config.embeddings:
+                    embeddings_provider = getattr(user_config.embeddings, "provider", None)
+                    embeddings_api_key = user_config.embeddings.api_key
+                    embeddings_model = user_config.embeddings.model
+                    embeddings_base_url = getattr(user_config.embeddings, "base_url", None)
+                    embeddings_endpoint = getattr(user_config.embeddings, "endpoint", None)
+                    embeddings_api_version = getattr(
+                        user_config.embeddings, "api_version", None
+                    )
+
+            if not embeddings_api_key:
+                error_message = (
+                    "API key not configured. Please set your API key in "
+                    "Model Configurations > Embedding to process documents."
+                )
+                logger.warning(f"Document {document_id}: {error_message}")
+                await db_client.update_document_status(
+                    document_id, "failed", error_message=error_message
+                )
+                return
+
+            if embeddings_provider == ServiceProviders.AZURE.value and embeddings_endpoint:
+                embedding_service = AzureOpenAIEmbeddingService(
+                    db_client=db_client,
+                    api_key=embeddings_api_key,
+                    endpoint=embeddings_endpoint,
+                    model_id=embeddings_model or "text-embedding-3-small",
+                    api_version=embeddings_api_version or "2024-02-15-preview",
+                )
+            else:
+                embedding_service = OpenAIEmbeddingService(
+                    db_client=db_client,
+                    api_key=embeddings_api_key,
+                    model_id=embeddings_model or "text-embedding-3-small",
+                    base_url=embeddings_base_url,
+                )
+
+            # Initialize LangChain LLM and Transformer
+            try:
+                llm = get_langchain_chat_model(user_config)
+            except Exception as e:
+                error_message = f"Failed to initialize LLM for Knowledge Graph: {str(e)}"
+                logger.error(f"Document {document_id}: {error_message}")
+                await db_client.update_document_status(
+                    document_id, "failed", error_message=error_message
+                )
+                return
+
+            from langchain_experimental.graph_transformers import LLMGraphTransformer
+            transformer = LLMGraphTransformer(llm=llm)
+
+            mps_chunks = mps_response.get("chunks", [])
+            if not mps_chunks:
+                logger.warning(f"Document {document_id}: MPS returned zero chunks")
+
+            # Convert chunks to langchain documents
+            from langchain_core.documents import Document as LangchainDocument
+            docs = [
+                LangchainDocument(
+                    page_content=chunk.get("contextualized_text") or chunk["chunk_text"]
+                )
+                for chunk in mps_chunks
+            ]
+
+            logger.info(f"Extracting Knowledge Graph from {len(docs)} chunks...")
+            try:
+                graph_documents = await transformer.aconvert_to_graph_documents(docs)
+            except Exception as e:
+                error_message = f"Knowledge Graph extraction failed: {str(e)}"
+                logger.error(f"Document {document_id}: {error_message}")
+                await db_client.update_document_status(
+                    document_id, "failed", error_message=error_message
+                )
+                return
+
+            # Extract unique nodes and relationships
+            seen_nodes = {}
+            relationships_to_insert = []
+
+            for graph_doc in graph_documents:
+                # Merge and deduplicate nodes
+                for node in graph_doc.nodes:
+                    node_name = str(node.id).strip()
+                    node_key = node_name.lower()
+
+                    if node_key in seen_nodes:
+                        if node.properties:
+                            seen_nodes[node_key]["properties"].update(node.properties)
+                        if node.type and not seen_nodes[node_key]["type"]:
+                            seen_nodes[node_key]["type"] = str(node.type)
+                    else:
+                        seen_nodes[node_key] = {
+                            "name": node_name,
+                            "type": str(node.type) if node.type else None,
+                            "properties": dict(node.properties) if node.properties else {},
+                        }
+
+                # Cache relationships
+                for rel in graph_doc.relationships:
+                    relationships_to_insert.append(
+                        {
+                            "source": str(rel.source.id).strip(),
+                            "target": str(rel.target.id).strip(),
+                            "type": str(rel.type).strip(),
+                            "properties": rel.properties or {},
+                        }
+                    )
+
+            node_records = []
+            node_texts_to_embed = []
+
+            # Format node text representation for semantic embeddings
+            for key, node_data in seen_nodes.items():
+                rep = f"Name: {node_data['name']}"
+                if node_data["type"]:
+                    rep += f" | Type: {node_data['type']}"
+                if node_data["properties"]:
+                    rep += f" | Properties: {json.dumps(node_data['properties'])}"
+                node_texts_to_embed.append((node_data, rep))
+
+            if node_texts_to_embed:
+                logger.info(f"Generating embeddings for {len(node_texts_to_embed)} unique nodes...")
+                embeddings = await embedding_service.embed_texts([item[1] for item in node_texts_to_embed])
+                for (node_data, rep), embedding in zip(node_texts_to_embed, embeddings):
+                    node_records.append(
+                        KnowledgeBaseNodeModel(
+                            document_id=document_id,
+                            organization_id=organization_id,
+                            name=node_data["name"],
+                            type=node_data["type"],
+                            properties=node_data["properties"],
+                            embedding=embedding,
+                        )
+                    )
+
+                logger.info("Storing nodes in database")
+                await db_client.create_nodes_batch(node_records)
+
+            relationship_records = []
+            for rel_data in relationships_to_insert:
+                relationship_records.append(
+                    KnowledgeBaseRelationshipModel(
+                        document_id=document_id,
+                        organization_id=organization_id,
+                        source=rel_data["source"],
+                        target=rel_data["target"],
+                        type=rel_data["type"],
+                        properties=rel_data["properties"],
+                    )
+                )
+
+            if relationship_records:
+                logger.info("Storing relationships in database")
+                await db_client.create_relationships_batch(relationship_records)
+
+            await db_client.update_document_status(
+                document_id,
+                "completed",
+                total_chunks=len(node_records),
+                docling_metadata=docling_metadata,
+            )
+
+            logger.info(
+                f"Successfully processed Knowledge Graph for document {document_id}. "
+                f"Nodes: {len(node_records)}, Relationships: {len(relationship_records)}"
             )
             return
 

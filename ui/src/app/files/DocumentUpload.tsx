@@ -231,6 +231,21 @@ export default function DocumentUpload({ onUploadSuccess }: DocumentUploadProps)
                 </p>
               </div>
             </label>
+            <label
+              htmlFor="knowledge_graph"
+              className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                retrievalMode === 'knowledge_graph' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+              }`}
+            >
+              <RadioGroupItem value="knowledge_graph" id="knowledge_graph" className="mt-0.5" />
+              <div>
+                <p className="font-medium text-sm">Knowledge Graph RAG</p>
+                <p className="text-xs text-muted-foreground">
+                  The document is processed into entities and relationships.
+                  Best for complex interconnected knowledge, mappings, or directories.
+                </p>
+              </div>
+            </label>
           </RadioGroup>
         </div>
 

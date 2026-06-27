@@ -1306,3 +1306,74 @@ class KnowledgeBaseChunkModel(Base):
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
+
+
+class KnowledgeBaseNodeModel(Base):
+    """Model for storing knowledge base nodes extracted from documents."""
+
+    __tablename__ = "knowledge_base_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer,
+        ForeignKey("knowledge_base_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name = Column(String(500), nullable=False)
+    type = Column(String(200), nullable=True)
+    properties = Column(JSON, nullable=False, default=dict)
+
+    # Embedding of the node's name & type for semantic retrieval
+    embedding = Column(Vector(1536), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    document = relationship("KnowledgeBaseDocumentModel")
+    organization = relationship("OrganizationModel")
+
+    __table_args__ = (
+        Index("ix_kb_nodes_document_id", "document_id"),
+        Index("ix_kb_nodes_organization_id", "organization_id"),
+        Index("ix_kb_nodes_name", "name"),
+        Index(
+            "ix_kb_nodes_embedding_ivfflat",
+            "embedding",
+            postgresql_using="ivfflat",
+            postgresql_with={"lists": 100},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+
+class KnowledgeBaseRelationshipModel(Base):
+    """Model for storing relationships between extracted knowledge base entities."""
+
+    __tablename__ = "knowledge_base_relationships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer,
+        ForeignKey("knowledge_base_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    source = Column(String(500), nullable=False)
+    target = Column(String(500), nullable=False)
+    type = Column(String(200), nullable=False)  # Relationship verb/label
+    properties = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    document = relationship("KnowledgeBaseDocumentModel")
+    organization = relationship("OrganizationModel")
+
+    __table_args__ = (
+        Index("ix_kb_relationships_document_id", "document_id"),
+        Index("ix_kb_relationships_organization_id", "organization_id"),
+        Index("ix_kb_relationships_source", "source"),
+        Index("ix_kb_relationships_target", "target"),
+    )
+

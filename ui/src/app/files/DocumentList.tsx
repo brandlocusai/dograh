@@ -203,14 +203,20 @@ export default function DocumentList({ refreshTrigger }: DocumentListProps) {
                     {getStatusBadge(doc.processing_status)}
                     {doc.retrieval_mode === 'full_document' ? (
                       <Badge variant="outline" className="text-xs">Full Document</Badge>
+                    ) : doc.retrieval_mode === 'knowledge_graph' ? (
+                      <Badge variant="outline" className="text-xs">Knowledge Graph</Badge>
                     ) : (
                       <Badge variant="outline" className="text-xs">Chunked</Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>{formatFileSize(doc.file_size_bytes)}</span>
-                    {doc.processing_status === 'completed' && doc.retrieval_mode !== 'full_document' && (
-                      <span>{doc.total_chunks} chunks</span>
+                    {doc.processing_status === 'completed' && (
+                      doc.retrieval_mode === 'knowledge_graph' ? (
+                        <span>{doc.total_chunks} entities</span>
+                      ) : doc.retrieval_mode !== 'full_document' ? (
+                        <span>{doc.total_chunks} chunks</span>
+                      ) : null
                     )}
                     <span>{formatDate(doc.created_at)}</span>
                   </div>
