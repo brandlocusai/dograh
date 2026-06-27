@@ -85,6 +85,12 @@ main() {
         error_exit "rolling_update_docker.sh failed — see log: $LOG_FILE"
     fi
 
+    # ── Step 5: Clean up old dangling images ──────────────────────────────────
+    log "Cleaning up old dangling images..."
+    if ! docker image prune -f 2>&1 | tee -a "$LOG_FILE"; then
+        log_warning "docker image prune failed, skipping..."
+    fi
+
     log_success "Deployment complete!"
     ln -sf "$LOG_FILE" "$LOG_DIR/latest.log"
     return 0
