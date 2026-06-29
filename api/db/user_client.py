@@ -199,3 +199,18 @@ class UserClient(BaseDBClient):
             await session.commit()
             await session.refresh(user)
             return user
+
+    async def create_user_passwordless(
+        self, email: str, provider_id: str | None = None
+    ) -> UserModel:
+        """Create a new passwordless user."""
+        async with self.async_session() as session:
+            user = UserModel(
+                provider_id=provider_id or f"oss_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4()}",
+                email=email.lower(),
+                password_hash=None,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
