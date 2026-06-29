@@ -5285,16 +5285,6 @@ export type HandleTwilioStatusCallbackApiV1TelephonyTwilioStatusCallbackWorkflow
 
 export type HandleVobizHangupCallbackApiV1TelephonyVobizHangupCallbackWorkflowRunIdPostData = {
     body?: never;
-    headers?: {
-        /**
-         * X-Vobiz-Signature
-         */
-        'x-vobiz-signature'?: string | null;
-        /**
-         * X-Vobiz-Timestamp
-         */
-        'x-vobiz-timestamp'?: string | null;
-    };
     path: {
         /**
          * Workflow Run Id
@@ -5327,16 +5317,6 @@ export type HandleVobizHangupCallbackApiV1TelephonyVobizHangupCallbackWorkflowRu
 
 export type HandleVobizRingCallbackApiV1TelephonyVobizRingCallbackWorkflowRunIdPostData = {
     body?: never;
-    headers?: {
-        /**
-         * X-Vobiz-Signature
-         */
-        'x-vobiz-signature'?: string | null;
-        /**
-         * X-Vobiz-Timestamp
-         */
-        'x-vobiz-timestamp'?: string | null;
-    };
     path: {
         /**
          * Workflow Run Id
@@ -5369,16 +5349,6 @@ export type HandleVobizRingCallbackApiV1TelephonyVobizRingCallbackWorkflowRunIdP
 
 export type HandleVobizHangupCallbackByWorkflowApiV1TelephonyVobizHangupCallbackWorkflowWorkflowIdPostData = {
     body?: never;
-    headers?: {
-        /**
-         * X-Vobiz-Signature
-         */
-        'x-vobiz-signature'?: string | null;
-        /**
-         * X-Vobiz-Timestamp
-         */
-        'x-vobiz-timestamp'?: string | null;
-    };
     path: {
         /**
          * Workflow Id
@@ -9917,7 +9887,7 @@ export type GetEmbedConfigApiV1PublicEmbedConfigTokenGetResponses = {
 
 export type GetEmbedConfigApiV1PublicEmbedConfigTokenGetResponse = GetEmbedConfigApiV1PublicEmbedConfigTokenGetResponses[keyof GetEmbedConfigApiV1PublicEmbedConfigTokenGetResponses];
 
-export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsData = {
+export type OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsData = {
     body?: never;
     path: {
         /**
@@ -9929,7 +9899,7 @@ export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsData = {
     url: '/api/v1/public/embed/config/{token}';
 };
 
-export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsErrors = {
+export type OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsErrors = {
     /**
      * Not found
      */
@@ -9940,9 +9910,9 @@ export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsErrors = {
     422: HttpValidationError;
 };
 
-export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsError = OptionsConfigApiV1PublicEmbedConfigTokenOptionsErrors[keyof OptionsConfigApiV1PublicEmbedConfigTokenOptionsErrors];
+export type OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsError = OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsErrors[keyof OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsErrors];
 
-export type OptionsConfigApiV1PublicEmbedConfigTokenOptionsResponses = {
+export type OptionsEmbedConfigApiV1PublicEmbedConfigTokenOptionsResponses = {
     /**
      * Successful Response
      */

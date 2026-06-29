@@ -140,6 +140,11 @@ class BaseServiceConfiguration(BaseModel):
 
 class BaseLLMConfiguration(BaseServiceConfiguration):
     model: str
+    max_tokens: int | None = Field(
+        default=4096,
+        description="Maximum number of tokens the model is allowed to generate. If not set, a default safety limit is used.",
+        json_schema_extra={"ge": 1},
+    )
 
 
 class BaseTTSConfiguration(BaseServiceConfiguration):

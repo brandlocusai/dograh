@@ -32,6 +32,7 @@ def get_langchain_chat_model(user_config):
     base_url = getattr(user_config.llm, "base_url", None)
     endpoint = getattr(user_config.llm, "endpoint", None)
     api_version = getattr(user_config.llm, "api_version", None)
+    max_tokens = getattr(user_config.llm, "max_tokens", None) or 4096
 
     if not api_key:
         raise ValueError(
@@ -47,7 +48,7 @@ def get_langchain_chat_model(user_config):
             api_version=api_version or "2024-02-15-preview",
             azure_deployment=model,
             temperature=0,
-            max_tokens=4096,
+            max_tokens=max_tokens,
         )
     else:
         # Default to ChatOpenAI (handles OpenAI, Groq, OpenRouter, Speaches etc.)
@@ -59,7 +60,7 @@ def get_langchain_chat_model(user_config):
             api_key=api_key,
             model=model or "gpt-4o-mini",
             temperature=0,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             **kwargs,
         )
 

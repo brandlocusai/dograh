@@ -587,10 +587,10 @@ def create_tts_service(user_config, audio_config: "AudioConfig"):
 def create_llm_service_from_provider(
     provider: str,
     model: str,
-    api_key: str | None,
-    *,
+    api_key: str | list[str] | None = None,
     base_url: str | None = None,
     endpoint: str | None = None,
+    api_version: str | None = None,
     aws_access_key: str | None = None,
     aws_secret_key: str | None = None,
     aws_region: str | None = None,
@@ -598,12 +598,14 @@ def create_llm_service_from_provider(
     location: str | None = None,
     credentials: str | None = None,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ):
     """Create an LLM service from explicit provider/model/api_key.
 
     Also used by create_llm_service which extracts these from user_config.
     """
     logger.info(f"Creating LLM service: provider={provider}, model={model}")
+    max_tokens_val = max_tokens or 4096
     if provider == ServiceProviders.OPENAI.value:
         kwargs = {}
         if base_url:
@@ -614,13 +616,14 @@ def create_llm_service_from_provider(
                 api_key=api_key,
                 settings=OpenAILLMSettings(
                     model=model,
+                    max_tokens=max_tokens_val,
                     extra={"reasoning_effort": "minimal", "verbosity": "low"},
                 ),
                 **kwargs,
             )
         return OpenAILLMService(
             api_key=api_key,
-            settings=OpenAILLMSettings(model=model, temperature=0.1),
+            settings=OpenAILLMSettings(model=model, temperature=0.1, max_tokens=max_tokens_val),
             **kwargs,
         )
     elif provider == ServiceProviders.GROQ.value:
@@ -635,7 +638,7 @@ def create_llm_service_from_provider(
             kwargs["base_url"] = base_url
         return OpenRouterLLMService(
             api_key=api_key,
-            settings=OpenRouterLLMSettings(model=model, temperature=0.1),
+            settings=OpenRouterLLMSettings(model=model, temperature=0.1, max_tokens=max_tokens_val),
             **kwargs,
         )
     elif provider == ServiceProviders.GOOGLE.value:
@@ -656,13 +659,13 @@ def create_llm_service_from_provider(
         return AzureLLMService(
             api_key=api_key,
             endpoint=endpoint,
-            settings=AzureLLMSettings(model=model, temperature=0.1),
+            settings=AzureLLMSettings(model=model, temperature=0.1, max_tokens=max_tokens_val),
         )
     elif provider == ServiceProviders.DOGRAH.value:
         return DograhLLMService(
             base_url=f"{MPS_API_URL}/api/v1/llm",
             api_key=api_key,
-            settings=OpenAILLMSettings(model=model),
+            settings=OpenAILLMSettings(model=model, max_tokens=max_tokens_val),
         )
     elif provider == ServiceProviders.AWS_BEDROCK.value:
         return AWSBedrockLLMService(
@@ -881,6 +884,7 @@ def create_llm_service(user_config):
     provider = user_config.llm.provider
     model = user_config.llm.model
     api_key = user_config.llm.api_key
+    max_tokens = getattr(user_config.llm, "max_tokens", None)
 
     kwargs = {}
     if provider == ServiceProviders.OPENAI.value:
@@ -905,4 +909,4 @@ def create_llm_service(user_config):
     elif provider == ServiceProviders.SARVAM.value:
         kwargs["temperature"] = user_config.llm.temperature
 
-    return create_llm_service_from_provider(provider, model, api_key, **kwargs)
+    return create_llm_service_from_provider(provider, model, api_key, max_tokens=max_tokens, **kwargs)
