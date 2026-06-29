@@ -40,7 +40,7 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>MCP Server</CardTitle>
             <CardDescription>
-              Let AI agents access your Dograh workspace and documentation via
+              Let AI agents access your VCalls Ai workspace and documentation via
               the Model Context Protocol.{" "}
               <a
                 href="https://docs.dograh.com/integrations/mcp"

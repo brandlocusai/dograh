@@ -58,7 +58,12 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      <div className="mb-6 text-center">
+        <Link href="/" className="text-3xl font-extrabold tracking-tight hover:opacity-85 transition-opacity">
+          VCalls Ai
+        </Link>
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Create an account</CardTitle>
