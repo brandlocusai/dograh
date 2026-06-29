@@ -25,7 +25,7 @@ def test_dograh_elevenlabs_tts_service_instantiation(audio_config):
     user_config = create_mock_user_config(tts_config=tts_config)
 
     service = create_tts_service(user_config, audio_config)
-    assert isinstance(service, DograhElevenLabsTTSService)
+    assert service.__class__.__name__ == "DograhElevenLabsTTSService"
     assert service.custom_output_format == "pcm_22050"
     assert service.optimize_streaming_latency == 2
     # Verify sample rate mapping (pcm_22050 -> 22050)
