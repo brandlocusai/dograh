@@ -297,6 +297,46 @@ def create_stt_service(
         )
 
 
+class DograhElevenLabsTTSService(ElevenLabsTTSService):
+    def __init__(
+        self,
+        *,
+        output_format: str | None = None,
+        optimize_streaming_latency: int | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.custom_output_format = output_format
+        self.optimize_streaming_latency = optimize_streaming_latency
+
+    async def start(self, frame):
+        # Bypass ElevenLabsTTSService.start() which hardcodes output_format based on sample_rate
+        # and call the grandparent WebsocketTTSService.start() instead.
+        import pipecat.services.elevenlabs.tts as elevenlabs_tts
+        await super(ElevenLabsTTSService, self).start(frame)
+        if self.custom_output_format:
+            self._output_format = self.custom_output_format
+        else:
+            self._output_format = elevenlabs_tts.output_format_from_sample_rate(self.sample_rate)
+        await self._connect()
+
+    async def _connect_websocket(self):
+        # Intercept the websocket connection to append optimize_streaming_latency to the URL
+        import pipecat.services.elevenlabs.tts as elevenlabs_tts
+        original_websocket_connect = elevenlabs_tts.websocket_connect
+
+        async def custom_websocket_connect(url, *args, **kwargs):
+            if self.optimize_streaming_latency is not None:
+                url += f"&optimize_streaming_latency={self.optimize_streaming_latency}"
+            return await original_websocket_connect(url, *args, **kwargs)
+
+        elevenlabs_tts.websocket_connect = custom_websocket_connect
+        try:
+            await super()._connect_websocket()
+        finally:
+            elevenlabs_tts.websocket_connect = original_websocket_connect
+
+
 def create_tts_service(user_config, audio_config: "AudioConfig"):
     """Create and return appropriate TTS service based on user configuration
 
@@ -369,13 +409,31 @@ def create_tts_service(user_config, audio_config: "AudioConfig"):
             "http://", "ws://"
         )
 
+        stability = getattr(user_config.tts, "stability", 0.8)
+        if not isinstance(stability, (int, float)):
+            stability = 0.8
+
+        similarity_boost = getattr(user_config.tts, "similarity_boost", 0.75)
+        if not isinstance(similarity_boost, (int, float)):
+            similarity_boost = 0.75
+
+        style = getattr(user_config.tts, "style", 0.0)
+        if not isinstance(style, (int, float)):
+            style = 0.0
+
+        use_speaker_boost = getattr(user_config.tts, "use_speaker_boost", True)
+        if not isinstance(use_speaker_boost, bool):
+            use_speaker_boost = True
+
         # Build settings with optional language
         settings_kwargs = {
             "voice": voice_id,
             "model": user_config.tts.model,
-            "stability": 0.8,
+            "stability": stability,
             "speed": user_config.tts.speed,
-            "similarity_boost": 0.75,
+            "similarity_boost": similarity_boost,
+            "style": style,
+            "use_speaker_boost": use_speaker_boost,
         }
 
         # Extract language if configured
@@ -388,10 +446,34 @@ def create_tts_service(user_config, audio_config: "AudioConfig"):
                 # Skip language if invalid
                 pass
 
-        return ElevenLabsTTSService(
+        output_format = getattr(user_config.tts, "output_format", "pcm_16000")
+        if not isinstance(output_format, str):
+            output_format = "pcm_16000"
+
+        optimize_streaming_latency = getattr(user_config.tts, "optimize_streaming_latency", 3)
+        if not isinstance(optimize_streaming_latency, int):
+            optimize_streaming_latency = 3
+
+        # Map output_format to sample_rate
+        sample_rate = 24000
+        if "8000" in output_format:
+            sample_rate = 8000
+        elif "16000" in output_format:
+            sample_rate = 16000
+        elif "22050" in output_format:
+            sample_rate = 22050
+        elif "24000" in output_format:
+            sample_rate = 24000
+        elif "44100" in output_format:
+            sample_rate = 44100
+
+        return DograhElevenLabsTTSService(
             reconnect_on_error=False,
             api_key=user_config.tts.api_key,
             url=elevenlabs_url,
+            sample_rate=sample_rate,
+            output_format=output_format,
+            optimize_streaming_latency=optimize_streaming_latency,
             settings=ElevenLabsTTSSettings(**settings_kwargs),
             text_filters=[xml_function_tag_filter],
             skip_aggregator_types=["recording_router", "recording"],

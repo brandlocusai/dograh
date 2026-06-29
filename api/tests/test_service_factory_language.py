@@ -163,7 +163,7 @@ class TestElevenLabsLanguageConfiguration:
         )
         user_config = create_mock_user_config(tts_config=tts_config)
 
-        with patch("api.services.pipecat.service_factory.ElevenLabsTTSService") as mock_service:
+        with patch("api.services.pipecat.service_factory.DograhElevenLabsTTSService") as mock_service:
             create_tts_service(user_config, audio_config)
             assert mock_service.called
 
@@ -177,6 +177,6 @@ class TestElevenLabsLanguageConfiguration:
         )
         user_config = create_mock_user_config(tts_config=tts_config)
 
-        with patch("api.services.pipecat.service_factory.ElevenLabsTTSService") as mock_service:
+        with patch("api.services.pipecat.service_factory.DograhElevenLabsTTSService") as mock_service:
             create_tts_service(user_config, audio_config)
             assert mock_service.called

@@ -16,8 +16,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSelector } from "@/components/VoiceSelector";
 import { LANGUAGE_DISPLAY_NAMES } from "@/constants/languages";
+import { cn } from "@/lib/utils";
 import { useUserConfig } from "@/context/UserConfigContext";
 import type { ModelOverrides } from "@/types/workflow-configurations";
+
 
 type ServiceSegment = "llm" | "tts" | "stt" | "embeddings" | "realtime";
 
@@ -683,6 +685,111 @@ export function ServiceConfigurationForm({
                         }}
                         model={watch("tts_model") as string || undefined}
                     />
+                );
+            }
+        }
+
+        if (service === "tts" && serviceProviders.tts === "elevenlabs") {
+            if (field === "output_format") {
+                const currentValue = watch("tts_output_format") as string || "pcm_16000";
+                const formats = [
+                    { value: "pcm_16000", label: "PCM 16000 Hz", recommended: true },
+                    { value: "pcm_22050", label: "PCM 22050 Hz" },
+                    { value: "pcm_24000", label: "PCM 24000 Hz" },
+                    { value: "pcm_44100", label: "PCM 44100 Hz" },
+                    { value: "mp3_44100_128", label: "MP3 44100 Hz 128 kbps" },
+                    { value: "ulaw_8000", label: "u-law 8000 Hz" },
+                ];
+
+                return (
+                    <Select
+                        value={currentValue}
+                        onValueChange={(value) => setValue("tts_output_format", value, { shouldDirty: true })}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select output format" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {formats.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>
+                                    <div className="flex items-center justify-between w-full gap-2">
+                                        <span>{f.label}</span>
+                                        {f.recommended && (
+                                            <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                                                Recommended
+                                            </span>
+                                        )}
+                                    </div>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                );
+            }
+
+            if (field === "optimize_streaming_latency") {
+                const currentValue = watch("tts_optimize_streaming_latency") as number ?? 3;
+                return (
+                    <div className="flex rounded-md bg-muted p-1 w-full max-w-md">
+                        {[0, 1, 2, 3, 4].map((val) => (
+                            <button
+                                key={val}
+                                type="button"
+                                className={cn(
+                                    "flex-1 rounded-sm py-1.5 text-sm font-medium transition-all focus-visible:outline-none",
+                                    currentValue === val
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
+                                )}
+                                onClick={() => setValue("tts_optimize_streaming_latency", val, { shouldDirty: true })}
+                            >
+                                {val}
+                            </button>
+                        ))}
+                    </div>
+                );
+            }
+
+            if (field === "stability" || field === "similarity_boost" || field === "style") {
+                const fieldKey = `tts_${field}`;
+                const defaultValue = field === "stability" ? 0.8 : field === "similarity_boost" ? 0.75 : 0.0;
+                const currentValue = watch(fieldKey) as number ?? defaultValue;
+                return (
+                    <div className="space-y-2 w-full max-w-md">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">
+                                {field === "stability" ? "Stability" : field === "similarity_boost" ? "Clarity / Similarity" : "Style Exaggeration"}
+                            </span>
+                            <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
+                                {currentValue.toFixed(2)}
+                            </span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={currentValue}
+                            onChange={(e) => setValue(fieldKey, parseFloat(e.target.value), { shouldDirty: true })}
+                            className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                    </div>
+                );
+            }
+
+            if (field === "use_speaker_boost") {
+                const currentValue = watch("tts_use_speaker_boost") as boolean ?? true;
+                return (
+                    <div className="flex items-center space-x-2">
+                        <Switch
+                            id="tts_use_speaker_boost"
+                            checked={currentValue}
+                            onCheckedChange={(checked) => setValue("tts_use_speaker_boost", checked, { shouldDirty: true })}
+                        />
+                        <Label htmlFor="tts_use_speaker_boost" className="text-sm font-normal cursor-pointer">
+                            Enable Speaker Boost
+                        </Label>
+                    </div>
                 );
             }
         }

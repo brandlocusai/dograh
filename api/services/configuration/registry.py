@@ -870,6 +870,41 @@ class ElevenlabsTTSConfiguration(BaseServiceConfiguration):
             "regional compliance."
         ),
     )
+    output_format: str = Field(
+        default="pcm_16000",
+        description="Select the output format you want to use for ElevenLabs text to speech.",
+        json_schema_extra={
+            "examples": ["pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100", "mp3_44100_128", "ulaw_8000"],
+        },
+    )
+    optimize_streaming_latency: int = Field(
+        default=3,
+        ge=0,
+        le=4,
+        description="Latency for speech generation can be optimized at the cost of quality.",
+    )
+    stability: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Stability controls the voice's consistency. Lower values increase emotional range but may sound less predictable.",
+    )
+    similarity_boost: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Similarity boost controls how closely the voice matches the original speaker.",
+    )
+    style: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Style adjusts the exaggeration of the speaker's natural mannerisms.",
+    )
+    use_speaker_boost: bool = Field(
+        default=True,
+        description="Boost the similarity and clarity of the voice.",
+    )
 
 
 @register_tts
