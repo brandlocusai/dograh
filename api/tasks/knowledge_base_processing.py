@@ -47,6 +47,7 @@ def get_langchain_chat_model(user_config):
             api_version=api_version or "2024-02-15-preview",
             azure_deployment=model,
             temperature=0,
+            max_tokens=4096,
         )
     else:
         # Default to ChatOpenAI (handles OpenAI, Groq, OpenRouter, Speaches etc.)
@@ -58,6 +59,7 @@ def get_langchain_chat_model(user_config):
             api_key=api_key,
             model=model or "gpt-4o-mini",
             temperature=0,
+            max_tokens=4096,
             **kwargs,
         )
 
