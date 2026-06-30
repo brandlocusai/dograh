@@ -119,6 +119,142 @@ async def test_stripe_webhook_completed_payment(mock_org, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_verify_session_success(mock_user, mock_org, monkeypatch):
+    from api.routes.billing import VerifySessionRequest, verify_session
+
+    req = VerifySessionRequest(session_id="cs_test_123")
+
+    mock_session = {
+        "id": "cs_test_123",
+        "client_reference_id": "42",
+        "payment_status": "paid",
+        "amount_total": 2500,  # $25.00 in cents
+    }
+
+    # Mock Stripe Session retrieve
+    monkeypatch.setattr("stripe.checkout.Session.retrieve", MagicMock(return_value=mock_session))
+
+    # Mock DB session
+    mock_db_session = MagicMock()
+    session = AsyncMock()
+    
+    # Mock transaction query (first select) -> None (no existing transaction)
+    mock_tx_result = MagicMock()
+    mock_tx_result.scalar_one_or_none.return_value = None
+    
+    # Mock organization query (second select with_for_update)
+    mock_org_result = MagicMock()
+    mock_org_result.scalar_one_or_none.return_value = mock_org
+
+    session.execute = AsyncMock(side_effect=[mock_tx_result, mock_org_result])
+    
+    # Setup async context manager
+    mock_db_session.__aenter__ = AsyncMock(return_value=session)
+    mock_db_session.__aexit__ = AsyncMock()
+    
+    monkeypatch.setattr("api.db.db_client.async_session", MagicMock(return_value=mock_db_session))
+
+    res = await verify_session(req, user=mock_user)
+
+    assert res.balance_usd == 35.0  # 10.0 + 25.0
+    session.add.assert_called_once()
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_verify_session_already_completed(mock_user, mock_org, monkeypatch):
+    from api.routes.billing import VerifySessionRequest, verify_session
+
+    req = VerifySessionRequest(session_id="cs_test_123")
+
+    mock_session = {
+        "id": "cs_test_123",
+        "client_reference_id": "42",
+        "payment_status": "paid",
+        "amount_total": 2500,
+    }
+
+    monkeypatch.setattr("stripe.checkout.Session.retrieve", MagicMock(return_value=mock_session))
+
+    mock_db_session = MagicMock()
+    session = AsyncMock()
+    
+    # Mock transaction query (first select) -> existing completed transaction
+    existing_tx = BillingTransactionModel(
+        id=1,
+        organization_id=42,
+        stripe_session_id="cs_test_123",
+        amount_usd=25.0,
+        status="completed"
+    )
+    mock_tx_result = MagicMock()
+    mock_tx_result.scalar_one_or_none.return_value = existing_tx
+
+    session.execute = AsyncMock(return_value=mock_tx_result)
+    
+    mock_db_session.__aenter__ = AsyncMock(return_value=session)
+    mock_db_session.__aexit__ = AsyncMock()
+    
+    monkeypatch.setattr("api.db.db_client.async_session", MagicMock(return_value=mock_db_session))
+    
+    # Mock get_organization_by_id
+    monkeypatch.setattr("api.db.db_client.get_organization_by_id", AsyncMock(return_value=mock_org))
+
+    res = await verify_session(req, user=mock_user)
+
+    # Balance should not be incremented again, stays 10.0
+    assert res.balance_usd == 10.0
+    session.add.assert_not_called()
+    session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_verify_session_org_mismatch(mock_user, monkeypatch):
+    from api.routes.billing import VerifySessionRequest, verify_session
+
+    req = VerifySessionRequest(session_id="cs_test_123")
+
+    # Session belongs to organization 99, but user is in organization 42
+    mock_session = {
+        "id": "cs_test_123",
+        "client_reference_id": "99",
+        "payment_status": "paid",
+        "amount_total": 2500,
+    }
+
+    monkeypatch.setattr("stripe.checkout.Session.retrieve", MagicMock(return_value=mock_session))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_session(req, user=mock_user)
+    
+    assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+    assert "permission to verify" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_verify_session_unpaid(mock_user, monkeypatch):
+    from api.routes.billing import VerifySessionRequest, verify_session
+
+    req = VerifySessionRequest(session_id="cs_test_123")
+
+    # Session is unpaid
+    mock_session = {
+        "id": "cs_test_123",
+        "client_reference_id": "42",
+        "payment_status": "unpaid",
+        "amount_total": 2500,
+    }
+
+    monkeypatch.setattr("stripe.checkout.Session.retrieve", MagicMock(return_value=mock_session))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_session(req, user=mock_user)
+    
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert "has not been completed" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
 async def test_get_balance(mock_user, mock_org, monkeypatch):
     get_org_mock = AsyncMock(return_value=mock_org)
     monkeypatch.setattr("api.db.db_client.get_organization_by_id", get_org_mock)

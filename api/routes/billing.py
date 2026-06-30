@@ -102,6 +102,105 @@ async def create_checkout_session(
         )
 
 
+class VerifySessionRequest(BaseModel):
+    session_id: str
+
+
+@router.post("/verify-session", response_model=BalanceResponse)
+async def verify_session(
+    request: VerifySessionRequest,
+    user: UserModel = Depends(get_user)
+):
+    org_id = user.selected_organization_id
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User does not have an active organization",
+        )
+
+    try:
+        session = stripe.checkout.Session.retrieve(request.session_id)
+    except Exception as e:
+        logger.error(f"Failed to retrieve Stripe session {request.session_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Stripe session: {str(e)}",
+        )
+
+    client_ref_id = session.get("client_reference_id")
+    if not client_ref_id or int(client_ref_id) != org_id:
+        logger.warning(f"Session {request.session_id} organization mismatch. Expected {org_id}, got {client_ref_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to verify this payment session",
+        )
+
+    if session.get("payment_status") != "paid":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment has not been completed for this session",
+        )
+
+    amount_total = session.get("amount_total")  # in cents
+    if amount_total is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payment amount in session",
+        )
+
+    amount_usd = float(amount_total) / 100.0
+
+    async with db_client.async_session() as db_session:
+        # Check if transaction was already processed
+        stmt = select(BillingTransactionModel).where(
+            BillingTransactionModel.stripe_session_id == request.session_id
+        )
+        result = await db_session.execute(stmt)
+        tx = result.scalar_one_or_none()
+
+        if tx and tx.status == "completed":
+            # Already processed, get organization to return current balance
+            org = await db_client.get_organization_by_id(org_id)
+            if not org:
+                raise HTTPException(status_code=404, detail="Organization not found")
+            return BalanceResponse(
+                balance_usd=org.balance_usd,
+                price_per_second_usd=org.price_per_second_usd
+            )
+
+        # Get organization with row lock
+        org_stmt = select(OrganizationModel).where(OrganizationModel.id == org_id).with_for_update()
+        org_result = await db_session.execute(org_stmt)
+        org = org_result.scalar_one_or_none()
+
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        # Update organization balance
+        org.balance_usd = (org.balance_usd or 0.0) + amount_usd
+
+        # Update or create transaction record
+        if tx:
+            tx.status = "completed"
+        else:
+            tx = BillingTransactionModel(
+                organization_id=org_id,
+                stripe_session_id=request.session_id,
+                amount_usd=amount_usd,
+                status="completed"
+            )
+            db_session.add(tx)
+
+        await db_session.commit()
+        logger.info(f"Successfully verified and credited organization {org_id} with ${amount_usd} via verification endpoint")
+
+        return BalanceResponse(
+            balance_usd=org.balance_usd,
+            price_per_second_usd=org.price_per_second_usd
+        )
+
+
+
 @router.post("/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")

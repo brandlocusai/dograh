@@ -68,12 +68,63 @@ function BillingContent() {
     const cancel = searchParams.get("cancel");
     const sessionId = searchParams.get("session_id");
 
-    if (success === "true") {
+    if (success === "true" && sessionId) {
+      const verifySession = async () => {
+        try {
+          setIsLoadingBalance(true);
+          const token = await getAccessToken();
+          const response = await fetch(`${backendUrl}/api/v1/billing/verify-session`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ session_id: sessionId }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to verify session");
+          }
+
+          const data = await response.json();
+          setBalance(data.balance_usd);
+          setPricePerSecond(data.price_per_second_usd);
+          
+          toast.success("Payment successful! Your balance has been updated.", {
+            description: `Session ID: ${sessionId.slice(0, 15)}...`,
+            duration: 5000,
+          });
+
+          // Refresh transactions list
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          };
+          const txRes = await fetch(`${backendUrl}/api/v1/billing/transactions?limit=10`, { headers });
+          if (txRes.ok) {
+            const txData = await txRes.json();
+            setTransactions(txData.transactions);
+            setTotalCount(txData.total_count);
+          }
+        } catch (err) {
+          console.error("Error verifying Stripe session:", err);
+          toast.error("Could not verify payment immediately, but it will be processed shortly.", {
+            description: "Please refresh the page in a few moments.",
+            duration: 6000,
+          });
+          fetchBillingData();
+        } finally {
+          setIsLoadingBalance(false);
+          router.replace("/billing");
+        }
+      };
+
+      verifySession();
+    } else if (success === "true") {
       toast.success("Payment successful! Your balance has been updated.", {
-        description: sessionId ? `Session ID: ${sessionId.slice(0, 15)}...` : undefined,
         duration: 5000,
       });
-      // Clear URL parameters
+      fetchBillingData();
       router.replace("/billing");
     } else if (cancel === "true") {
       toast.error("Payment cancelled.", {
@@ -82,7 +133,7 @@ function BillingContent() {
       });
       router.replace("/billing");
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, backendUrl, getAccessToken, fetchBillingData]);
 
   // Fetch billing data
   const fetchBillingData = useCallback(async () => {
