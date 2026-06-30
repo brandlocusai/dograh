@@ -21,7 +21,7 @@ export default function SignupPage() {
     setSent(false);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
       const res = await fetch(`${backendUrl}/api/v1/auth/magic-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -46,7 +46,7 @@ export default function SignupPage() {
   const handleGoogleLogin = async (response: any) => {
     setLoading(true);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
       const res = await fetch(`${backendUrl}/api/v1/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,7 +80,7 @@ export default function SignupPage() {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
         const res = await fetch(`${backendUrl}/api/v1/auth/config`);
         if (res.ok) {
           const data = await res.json();

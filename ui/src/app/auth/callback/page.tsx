@@ -27,7 +27,7 @@ function CallbackContent() {
 
     const verifyToken = async () => {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
         const res = await fetch(`${backendUrl}/api/v1/auth/magic-link/verify`, {
           method: "POST",
           headers: {
