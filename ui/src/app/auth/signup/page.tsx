@@ -21,7 +21,7 @@ export default function SignupPage() {
     setSent(false);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
       const res = await fetch(`${backendUrl}/api/v1/auth/magic-link`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -46,7 +46,7 @@ export default function SignupPage() {
   const handleGoogleLogin = async (response: any) => {
     setLoading(true);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
       const res = await fetch(`${backendUrl}/api/v1/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,17 +74,38 @@ export default function SignupPage() {
     }
   };
 
-  const initializeGoogle = () => {
-    const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!googleClientId) {
-      console.warn("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured");
-      return;
-    }
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
+  const [isGoogleConfigured, setIsGoogleConfigured] = useState<boolean>(true);
 
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+        const res = await fetch(`${backendUrl}/api/v1/auth/config`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.google_client_id) {
+            setGoogleClientId(data.google_client_id);
+            setIsGoogleConfigured(true);
+          } else {
+            setIsGoogleConfigured(false);
+          }
+        } else {
+          setIsGoogleConfigured(false);
+        }
+      } catch (err) {
+        console.error("Failed to fetch auth config:", err);
+        setIsGoogleConfigured(false);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  const initializeGoogle = (clientId: string) => {
     if (typeof window !== "undefined" && (window as any).google) {
       try {
         (window as any).google.accounts.id.initialize({
-          client_id: googleClientId,
+          client_id: clientId,
           callback: handleGoogleLogin,
         });
         (window as any).google.accounts.id.renderButton(
@@ -98,14 +119,22 @@ export default function SignupPage() {
   };
 
   useEffect(() => {
-    initializeGoogle();
-  }, []);
+    if (googleClientId) {
+      if (typeof window !== "undefined" && (window as any).google) {
+        initializeGoogle(googleClientId);
+      }
+    }
+  }, [googleClientId]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <Script
         src="https://accounts.google.com/gsi/client"
-        onLoad={initializeGoogle}
+        onLoad={() => {
+          if (googleClientId) {
+            initializeGoogle(googleClientId);
+          }
+        }}
         strategy="lazyOnload"
       />
       <div className="mb-6 text-center">
@@ -120,7 +149,7 @@ export default function SignupPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+            {!isGoogleConfigured ? (
               <Button variant="outline" className="w-full opacity-70 cursor-not-allowed" disabled>
                 <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                   <path

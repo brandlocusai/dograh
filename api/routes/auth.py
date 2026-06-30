@@ -203,3 +203,11 @@ async def get_current_user(user: UserModel = Depends(get_user)):
         organization_id=user.selected_organization_id,
         provider_id=user.provider_id,
     )
+
+
+@router.get("/config")
+async def get_auth_config():
+    return {
+        "google_client_id": GOOGLE_CLIENT_ID,
+    }
+
