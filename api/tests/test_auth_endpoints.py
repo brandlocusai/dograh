@@ -111,3 +111,15 @@ async def test_google_auth_success():
     assert res_data["token"] == "mock-jwt-token"
     assert res_data["user"]["email"] == "googleuser@example.com"
     assert res_data["user"]["organization_id"] == 22
+
+
+def test_get_auth_config():
+    app = _make_test_app()
+    client = TestClient(app)
+
+    with patch("api.routes.auth.GOOGLE_CLIENT_ID", "mock-google-client-id"):
+        response = client.get("/auth/config")
+
+    assert response.status_code == 200
+    assert response.json() == {"google_client_id": "mock-google-client-id"}
+
