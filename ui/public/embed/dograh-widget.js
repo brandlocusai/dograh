@@ -761,7 +761,7 @@
     // Handle incoming audio
     state.pc.ontrack = (event) => {
       if (event.track.kind === 'audio' && state.audioElement) {
-        state.audioElement.srcObject = event.streams[0];
+        state.audioElement.srcObject = event.streams[0] || new MediaStream([event.track]);
       }
     };
 
