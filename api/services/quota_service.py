@@ -48,6 +48,27 @@ async def check_dograh_quota(
         if quota is insufficient.
     """
     try:
+        # Superusers bypass balance and quota checks
+        if getattr(user, "is_superuser", False):
+            return QuotaCheckResult(has_quota=True)
+
+        # Check organization balance
+        org_id = user.selected_organization_id
+        if org_id:
+            org = await db_client.get_organization_by_id(org_id)
+            if org:
+                balance = org.balance_usd or 0.0
+                if balance < 0.10:
+                    logger.warning(f"Insufficient organization balance for org {org_id}: ${balance:.2f} remaining")
+                    return QuotaCheckResult(
+                        has_quota=False,
+                        error_code="insufficient_balance",
+                        error_message=(
+                            "Your account balance is too low. "
+                            "Please add funds on the Billing page to continue making calls."
+                        ),
+                    )
+
         # Get user configurations
         user_config = await db_client.get_user_configurations(user.id)
 
