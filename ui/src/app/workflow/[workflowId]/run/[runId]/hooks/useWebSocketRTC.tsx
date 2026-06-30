@@ -188,7 +188,7 @@ export const useWebSocketRTC = ({ workflowId, workflowRunId, accessToken, initia
 
         pc.addEventListener('track', (evt) => {
             if (evt.track.kind === 'audio' && audioRef.current) {
-                audioRef.current.srcObject = evt.streams[0] || new MediaStream([evt.track]);
+                audioRef.current.srcObject = evt.streams[0];
             }
         });
 
