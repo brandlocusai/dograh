@@ -26,3 +26,20 @@ def create_jwt_token(user_id: int, email: str) -> str:
 
 def decode_jwt_token(token: str) -> dict:
     return jwt.decode(token, OSS_JWT_SECRET, algorithms=["HS256"])
+
+
+def create_magic_token(email: str) -> str:
+    payload = {
+        "sub": "magic_link",
+        "email": email.lower(),
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
+        "iat": datetime.now(UTC),
+    }
+    return jwt.encode(payload, OSS_JWT_SECRET, algorithm="HS256")
+
+
+def decode_magic_token(token: str) -> str:
+    payload = jwt.decode(token, OSS_JWT_SECRET, algorithms=["HS256"])
+    if payload.get("sub") != "magic_link":
+        raise jwt.InvalidTokenError("Invalid token subject")
+    return payload["email"]

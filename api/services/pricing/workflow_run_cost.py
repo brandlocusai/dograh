@@ -111,11 +111,14 @@ async def _build_usage_cost_snapshot(
         organization = await _get_pricing_organization(workflow_run)
 
     charge_usd = None
-    if organization and organization.price_per_second_usd:
+    if organization:
+        rate = organization.price_per_second_usd
+        if rate is None:
+            rate = 0.0025  # Default: $0.15 per minute
         duration_seconds = usage_info.get("call_duration_seconds", 0)
         charge_usd = float(
             Decimal(str(duration_seconds))
-            * Decimal(str(organization.price_per_second_usd))
+            * Decimal(str(rate))
         )
 
     cost_info = {

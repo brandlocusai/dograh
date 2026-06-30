@@ -116,6 +116,7 @@ class OrganizationModel(Base):
     )
 
     price_per_second_usd = Column(Float, nullable=True)
+    balance_usd = Column(Float, nullable=False, default=0.0, server_default=text("0.0"))
 
     # Relationships
     users = relationship(
@@ -1376,4 +1377,19 @@ class KnowledgeBaseRelationshipModel(Base):
         Index("ix_kb_relationships_source", "source"),
         Index("ix_kb_relationships_target", "target"),
     )
+
+
+class BillingTransactionModel(Base):
+    __tablename__ = "billing_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    stripe_session_id = Column(String, nullable=True, unique=True, index=True)
+    amount_usd = Column(Float, nullable=False)
+    status = Column(String, nullable=False)  # 'pending', 'completed', 'failed'
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    organization = relationship("OrganizationModel")
 

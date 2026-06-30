@@ -23,4 +23,4 @@ PyNaCl==1.6.2
 langchain==0.3.13
 langchain-experimental==0.3.4
 langchain-openai==0.2.14
-
+stripe>=10.0.0

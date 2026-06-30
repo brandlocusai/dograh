@@ -177,10 +177,25 @@ class OrganizationUsageClient(BaseDBClient):
             cycle_locked.used_dograh_tokens += actual_tokens
             cycle_locked.total_duration_seconds += int(round(duration_seconds))
 
-            # Update USD amount if provided
+            # Update USD amount and deduct from organization's balance
+            if charge_usd is not None or (duration_seconds > 0):
+                # Acquire a row-level lock for organization to update balance
+                org_result = await session.execute(
+                    select(OrganizationModel)
+                    .where(OrganizationModel.id == organization_id)
+                    .with_for_update(skip_locked=False)
+                )
+                org = org_result.scalar_one_or_none()
+                if org:
+                    if charge_usd is None:
+                        price = org.price_per_second_usd if org.price_per_second_usd is not None else 0.0025
+                        charge_usd = duration_seconds * price
+                    
+                    org.balance_usd = (org.balance_usd or 0.0) - charge_usd
+
             if charge_usd is not None:
                 if cycle_locked.used_amount_usd is None:
-                    cycle_locked.used_amount_usd = 0
+                    cycle_locked.used_amount_usd = 0.0
                 cycle_locked.used_amount_usd += charge_usd
 
             await session.commit()

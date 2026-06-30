@@ -141,6 +141,11 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         url: "/reports",
         icon: FileText,
       },
+      {
+        title: "Billing",
+        url: "/billing",
+        icon: CircleDollarSign,
+      },
     ],
   },
 ];
@@ -261,10 +266,10 @@ export function AppSidebar() {
           <div className={cn("flex items-center gap-2", isCollapsed && "hidden")}>
             <Link
               href="/"
-              className="notranslate flex items-center gap-2 px-2 text-xl font-bold"
+              className="notranslate flex items-center gap-2 px-2 text-xl font-bold whitespace-nowrap flex-shrink-0"
               translate="no"
             >
-              Brandlocus
+              VCalls Ai
               {versionInfo && (
                 <span
                   className="notranslate text-xs font-normal text-muted-foreground"
