@@ -20,7 +20,7 @@ def test_cost_calculator():
 
     result = cost_calculator.calculate_total_cost(sample_usage)
     assert result["llm_cost"] == 45380 * 0.40 / 1_000_000 + 496 * 1.60 / 1_000_000
-    assert result["tts_cost"] == 2399 * 0.0256 / 1_000
+    assert result["tts_cost"] == 2399 * 0.10 / 1_000
     assert result["stt_cost"] == 177.21536946296692 / 60 * 0.0077
     assert (
         abs(

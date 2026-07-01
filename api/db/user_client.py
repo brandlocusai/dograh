@@ -115,25 +115,29 @@ class UserClient(BaseDBClient):
             }
 
             for section in ["llm", "tts", "stt"]:
-                provider = default_models.get(f"{section}_provider")
-                model = default_models.get(f"{section}_model")
-                if provider and model:
-                    if section not in config_data or not isinstance(config_data[section], dict):
-                        config_data[section] = {}
-                    
-                    config_data[section]["provider"] = provider
-                    if section == "llm":
-                        current_model = config_data[section].get("model")
-                        if not current_model:
-                            config_data[section]["model"] = model
-                    else:
-                        # Only set model if it is a real model name (not the placeholder "default")
-                        # so that provider-specific schema defaults are used (e.g. eleven_flash_v2_5)
-                        if model and model != "default":
-                            config_data[section]["model"] = model
+                if section not in config_data or not isinstance(config_data[section], dict):
+                    config_data[section] = {}
+                
+                # Fallback to default provider/model if not configured
+                active_provider = config_data[section].get("provider")
+                if not active_provider:
+                    default_provider = default_models.get(f"{section}_provider")
+                    if default_provider:
+                        config_data[section]["provider"] = default_provider
+                        active_provider = default_provider
+                
+                if active_provider:
+                    current_model = config_data[section].get("model")
+                    if not current_model or current_model == "default":
+                        # Only set model if active provider is the default provider
+                        default_provider = default_models.get(f"{section}_provider")
+                        if active_provider == default_provider:
+                            default_model = default_models.get(f"{section}_model")
+                            if default_model and default_model != "default":
+                                config_data[section]["model"] = default_model
 
                     # Inject defaults for other required fields from registry
-                    config_cls = REGISTRY[service_type_map[section]].get(provider)
+                    config_cls = REGISTRY[service_type_map[section]].get(active_provider)
                     if config_cls:
                         for field_name, field_def in config_cls.model_fields.items():
                             if field_name not in config_data[section] and field_def.default is not None:
@@ -234,7 +238,9 @@ class UserClient(BaseDBClient):
                 await session.rollback()
                 raise e
             await session.refresh(configuration_obj)
-        return UserConfiguration.model_validate(configuration_obj.configuration)
+        # Update last_validated_at from the database just in case it changed
+        configuration.last_validated_at = configuration_obj.last_validated_at
+        return configuration
 
     async def update_user_configuration_last_validated_at(self, user_id: int) -> None:
         async with self.async_session() as session:
