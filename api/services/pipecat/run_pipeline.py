@@ -415,19 +415,19 @@ async def _run_pipeline(
         # llm_* refers to the side-channel text LLM (variable extraction,
         # voicemail detection); realtime_* is the speech-to-speech service.
         runtime_configuration = {
-            "realtime_provider": user_config.realtime.provider,
-            "realtime_model": user_config.realtime.model,
-            "llm_provider": user_config.llm.provider,
-            "llm_model": user_config.llm.model,
+            "realtime_provider": user_config.realtime.provider if user_config.realtime else None,
+            "realtime_model": user_config.realtime.model if user_config.realtime else None,
+            "llm_provider": user_config.llm.provider if user_config.llm else None,
+            "llm_model": user_config.llm.model if user_config.llm else None,
         }
     else:
         runtime_configuration = {
-            "stt_provider": user_config.stt.provider,
-            "stt_model": user_config.stt.model,
-            "tts_provider": user_config.tts.provider,
-            "tts_model": user_config.tts.model,
-            "llm_provider": user_config.llm.provider,
-            "llm_model": user_config.llm.model,
+            "stt_provider": user_config.stt.provider if user_config.stt else None,
+            "stt_model": user_config.stt.model if user_config.stt else None,
+            "tts_provider": user_config.tts.provider if user_config.tts else None,
+            "tts_model": user_config.tts.model if user_config.tts else None,
+            "llm_provider": user_config.llm.provider if user_config.llm else None,
+            "llm_model": user_config.llm.model if user_config.llm else None,
         }
     merged_call_context_vars = {
         **merged_call_context_vars,
@@ -586,7 +586,8 @@ async def _run_pipeline(
         # Deepgram Flux uses external turn detection (VAD + External start/stop)
         # Other models use configurable turn detection strategy
         is_deepgram_flux = (
-            user_config.stt.provider == ServiceProviders.DEEPGRAM.value
+            user_config.stt is not None
+            and user_config.stt.provider == ServiceProviders.DEEPGRAM.value
             and user_config.stt.model == "flux-general-en"
         )
 
