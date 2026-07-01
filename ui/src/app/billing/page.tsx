@@ -62,6 +62,44 @@ function BillingContent() {
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
+  // Fetch billing data
+  const fetchBillingData = useCallback(async () => {
+    if (loading || !user) return;
+
+    try {
+      setIsLoadingBalance(true);
+      setIsLoadingTransactions(true);
+      
+      const token = await getAccessToken();
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      // Fetch balance
+      const balanceRes = await fetch(`${backendUrl}/api/v1/billing/balance`, { headers });
+      if (balanceRes.ok) {
+        const balanceData = await balanceRes.json();
+        setBalance(balanceData.balance_usd);
+        setPricePerSecond(balanceData.price_per_second_usd);
+      }
+
+      // Fetch transactions
+      const txRes = await fetch(`${backendUrl}/api/v1/billing/transactions?limit=10`, { headers });
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        setTransactions(txData.transactions);
+        setTotalCount(txData.total_count);
+      }
+    } catch (err) {
+      console.error("Error fetching billing data:", err);
+      toast.error("Failed to load billing information.");
+    } finally {
+      setIsLoadingBalance(false);
+      setIsLoadingTransactions(false);
+    }
+  }, [loading, user, backendUrl, getAccessToken]);
+
   // Handle Stripe redirect callbacks
   useEffect(() => {
     const success = searchParams.get("success");
@@ -134,44 +172,6 @@ function BillingContent() {
       router.replace("/billing");
     }
   }, [searchParams, router, backendUrl, getAccessToken, fetchBillingData]);
-
-  // Fetch billing data
-  const fetchBillingData = useCallback(async () => {
-    if (loading || !user) return;
-
-    try {
-      setIsLoadingBalance(true);
-      setIsLoadingTransactions(true);
-      
-      const token = await getAccessToken();
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-
-      // Fetch balance
-      const balanceRes = await fetch(`${backendUrl}/api/v1/billing/balance`, { headers });
-      if (balanceRes.ok) {
-        const balanceData = await balanceRes.json();
-        setBalance(balanceData.balance_usd);
-        setPricePerSecond(balanceData.price_per_second_usd);
-      }
-
-      // Fetch transactions
-      const txRes = await fetch(`${backendUrl}/api/v1/billing/transactions?limit=10`, { headers });
-      if (txRes.ok) {
-        const txData = await txRes.json();
-        setTransactions(txData.transactions);
-        setTotalCount(txData.total_count);
-      }
-    } catch (err) {
-      console.error("Error fetching billing data:", err);
-      toast.error("Failed to load billing information.");
-    } finally {
-      setIsLoadingBalance(false);
-      setIsLoadingTransactions(false);
-    }
-  }, [loading, user, backendUrl, getAccessToken]);
 
   useEffect(() => {
     if (!loading && !user) {
