@@ -520,6 +520,7 @@ export function ServiceConfigurationForm({
                     <div className="space-y-2">
                         <Label>Provider</Label>
                         <Select
+                            disabled={mode === 'global'}
                             value={currentProvider}
                             onValueChange={(providerName) => {
                                 handleProviderChange(service, providerName);
@@ -579,7 +580,7 @@ export function ServiceConfigurationForm({
                     </div>
                 )}
 
-                {currentProvider && providerSchema && providerSchema.properties.api_key && (
+                {false && currentProvider && providerSchema && providerSchema.properties.api_key && (
                     <div className="space-y-2">
                         <Label>{mode === 'override' ? 'API Key (leave empty to use global)' : 'API Key(s)'}</Label>
                         {renderFieldDescription("api_key", providerSchema)}
@@ -673,11 +674,14 @@ export function ServiceConfigurationForm({
             ? providerSchema.$defs[schema.$ref.split('/').pop() || '']
             : schema;
 
+        const isFieldDisabled = mode === 'global' && !(service === 'llm' && field === 'model');
+
         if (service === "tts" && field === "voice" && !actualSchema?.allow_custom_input) {
             const hasVoiceOptions = actualSchema?.enum || actualSchema?.examples;
             if (!hasVoiceOptions) {
                 return (
                     <VoiceSelector
+                        disabled={isFieldDisabled}
                         provider={serviceProviders.tts}
                         value={watch(`${service}_${field}`) as string || ""}
                         onChange={(voiceId) => {
@@ -703,6 +707,7 @@ export function ServiceConfigurationForm({
 
                 return (
                     <Select
+                        disabled={isFieldDisabled}
                         value={currentValue}
                         onValueChange={(value) => setValue("tts_output_format", value, { shouldDirty: true })}
                     >
@@ -733,6 +738,7 @@ export function ServiceConfigurationForm({
                     <div className="flex rounded-md bg-muted p-1 w-full max-w-md">
                         {[0, 1, 2, 3, 4].map((val) => (
                             <button
+                                disabled={isFieldDisabled}
                                 key={val}
                                 type="button"
                                 className={cn(
@@ -765,6 +771,7 @@ export function ServiceConfigurationForm({
                             </span>
                         </div>
                         <input
+                            disabled={isFieldDisabled}
                             type="range"
                             min="0"
                             max="1"
@@ -782,6 +789,7 @@ export function ServiceConfigurationForm({
                 return (
                     <div className="flex items-center space-x-2">
                         <Switch
+                            disabled={isFieldDisabled}
                             id="tts_use_speaker_boost"
                             checked={currentValue}
                             onCheckedChange={(checked) => setValue("tts_use_speaker_boost", checked, { shouldDirty: true })}
@@ -803,6 +811,7 @@ export function ServiceConfigurationForm({
                 return (
                     <div className="space-y-2">
                         <Input
+                            disabled={isFieldDisabled}
                             type="text"
                             placeholder={`Enter ${field}`}
                             value={currentValue}
@@ -812,6 +821,7 @@ export function ServiceConfigurationForm({
                         />
                         <div className="flex items-center space-x-2">
                             <Checkbox
+                                disabled={isFieldDisabled}
                                 id={`custom-input-${fieldKey}`}
                                 checked={true}
                                 onCheckedChange={(checked) => {
@@ -832,6 +842,7 @@ export function ServiceConfigurationForm({
             return (
                 <div className="space-y-2">
                     <Select
+                        disabled={isFieldDisabled}
                         value={currentValue}
                         onValueChange={(value) => {
                             if (!value) return;
@@ -851,6 +862,7 @@ export function ServiceConfigurationForm({
                     </Select>
                     <div className="flex items-center space-x-2">
                         <Checkbox
+                            disabled={isFieldDisabled}
                             id={`custom-input-${fieldKey}-dropdown`}
                             checked={false}
                             onCheckedChange={(checked) => {
@@ -887,6 +899,7 @@ export function ServiceConfigurationForm({
 
             return (
                 <Select
+                    disabled={isFieldDisabled}
                     value={watch(`${service}_${field}`) as string || ""}
                     onValueChange={(value) => {
                         if (!value) return;
@@ -910,6 +923,7 @@ export function ServiceConfigurationForm({
         if (actualSchema?.multiline) {
             return (
                 <Textarea
+                    disabled={isFieldDisabled}
                     rows={6}
                     className="font-mono text-xs"
                     placeholder={`Enter ${field}`}
@@ -922,6 +936,7 @@ export function ServiceConfigurationForm({
 
         return (
             <Input
+                disabled={isFieldDisabled}
                 type={actualSchema?.type === "number" ? "number" : "text"}
                 {...(actualSchema?.type === "number" && { step: "any" })}
                 placeholder={`Enter ${field}`}

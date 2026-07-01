@@ -23,8 +23,8 @@ TTS_PRICING: Dict[str, Dict[str, CharacterPricingModel]] = {
         "default": CharacterPricingModel(Decimal("0.030") / 1_000),
     },
     ServiceProviders.ELEVENLABS: {
-        # 6400 usd per 250*1e6 characters
-        "default": CharacterPricingModel(Decimal("0.0256") / 1_000)
+        # Official Multilingual v2/v3 PAYG rate: $0.10 per 1,000 characters
+        "default": CharacterPricingModel(Decimal("0.10") / 1_000)
     },
     "default": {"default": CharacterPricingModel(Decimal("0.030") / 1_000)},
 }

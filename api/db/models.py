@@ -1393,3 +1393,18 @@ class BillingTransactionModel(Base):
 
     organization = relationship("OrganizationModel")
 
+
+class GlobalConfigurationModel(Base):
+    __tablename__ = "global_configurations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True, nullable=False)
+    value = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+

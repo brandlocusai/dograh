@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   XCircle,
+  Calculator,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -60,6 +61,13 @@ function BillingContent() {
   const [customAmount, setCustomAmount] = useState<string>("");
   const [selectedAmount, setSelectedAmount] = useState<number | null>(25);
 
+  const [platformInfraRate, setPlatformInfraRate] = useState<number>(0.055);
+  const [monthlyMinutes, setMonthlyMinutes] = useState<number>(100);
+  const [selectedLLM, setSelectedLLM] = useState<string>("openai/gpt-4.1-mini");
+  const [selectedTTS, setSelectedTTS] = useState<string>("elevenlabs");
+  const [selectedSTT, setSelectedSTT] = useState<string>("deepgram");
+  const [apiRates, setApiRates] = useState<any>(null);
+
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
   // Fetch billing data
@@ -82,6 +90,12 @@ function BillingContent() {
         const balanceData = await balanceRes.json();
         setBalance(balanceData.balance_usd);
         setPricePerSecond(balanceData.price_per_second_usd);
+        if (balanceData.platform_infra_rate_per_minute !== undefined) {
+          setPlatformInfraRate(balanceData.platform_infra_rate_per_minute);
+        }
+        if (balanceData.estimated_rates) {
+          setApiRates(balanceData.estimated_rates);
+        }
       }
 
       // Fetch transactions
@@ -127,6 +141,12 @@ function BillingContent() {
           const data = await response.json();
           setBalance(data.balance_usd);
           setPricePerSecond(data.price_per_second_usd);
+          if (data.platform_infra_rate_per_minute !== undefined) {
+            setPlatformInfraRate(data.platform_infra_rate_per_minute);
+          }
+          if (data.estimated_rates) {
+            setApiRates(data.estimated_rates);
+          }
           
           toast.success("Payment successful! Your balance has been updated.", {
             description: `Session ID: ${sessionId.slice(0, 15)}...`,
@@ -398,6 +418,166 @@ function BillingContent() {
           </Card>
         </div>
       </div>
+
+      {/* Cost Estimator Section */}
+      {(() => {
+        const llmOptions = [
+          { id: "openai/gpt-4.1-mini", name: "GPT 4.1 Mini", rate: apiRates?.llm?.["openai/gpt-4.1-mini"] ?? 0.016 },
+          { id: "openai/gpt-4.1", name: "GPT 4.1", rate: apiRates?.llm?.["openai/gpt-4.1"] ?? 0.070 },
+          { id: "anthropic/claude-sonnet-4", name: "Claude 3.5 Sonnet", rate: apiRates?.llm?.["anthropic/claude-sonnet-4"] ?? 0.060 },
+          { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", rate: apiRates?.llm?.["google/gemini-2.5-flash"] ?? 0.012 },
+          { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", rate: apiRates?.llm?.["meta-llama/llama-3.3-70b-instruct"] ?? 0.012 },
+          { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", rate: apiRates?.llm?.["deepseek/deepseek-chat-v3-0324"] ?? 0.010 }
+        ];
+
+        const ttsOptions = [
+          { id: "elevenlabs", name: "ElevenLabs", rate: apiRates?.tts?.["elevenlabs"] ?? 0.040 },
+          { id: "deepgram", name: "Deepgram Aura", rate: apiRates?.tts?.["deepgram"] ?? 0.024 },
+          { id: "openai", name: "OpenAI TTS", rate: apiRates?.tts?.["openai"] ?? 0.030 }
+        ];
+
+        const selectedLLMObj = llmOptions.find(o => o.id === selectedLLM) || llmOptions[0];
+        const selectedTTSObj = ttsOptions.find(o => o.id === selectedTTS) || ttsOptions[0];
+        const platformRatePerMin = platformInfraRate;
+
+        const totalCostPerMin = selectedLLMObj.rate + selectedTTSObj.rate + platformRatePerMin;
+        const totalMonthlyCost = totalCostPerMin * monthlyMinutes;
+
+        return (
+          <Card className="border border-border/40 bg-gradient-to-br from-card/60 to-card/25 backdrop-blur-md shadow-xl overflow-hidden">
+            <CardHeader className="border-b border-border/10 pb-4">
+              <CardTitle className="flex items-center gap-2 text-xl font-bold">
+                <Calculator className="h-5 w-5 text-primary" />
+                Interactive Call Cost Estimator
+              </CardTitle>
+              <CardDescription>
+                Select your LLM and Voice configuration, and adjust your estimated monthly call volume in minutes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Columns - Inputs */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Slider */}
+                  <div className="space-y-3 bg-muted/20 p-4 rounded-xl border border-border/20">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-semibold text-foreground">Monthly Call Duration (Minutes)</Label>
+                      <span className="text-2xl font-black text-primary font-mono">{monthlyMinutes} min</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="5000"
+                      step="10"
+                      value={monthlyMinutes}
+                      onChange={(e) => setMonthlyMinutes(parseInt(e.target.value))}
+                      className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground font-mono">
+                      <span>10m</span>
+                      <span>1,000m</span>
+                      <span>2,500m</span>
+                      <span>5,000m</span>
+                    </div>
+                  </div>
+
+                  {/* Options Selection */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* LLM Selection */}
+                    <div className="space-y-3 bg-muted/10 p-4 rounded-xl border border-border/20">
+                      <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground block">
+                        Choose Language Model (LLM)
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {llmOptions.map((opt) => (
+                          <Button
+                            key={opt.id}
+                            type="button"
+                            variant={selectedLLM === opt.id ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSelectedLLM(opt.id)}
+                            className={`h-11 text-xs font-semibold ${
+                              selectedLLM === opt.id 
+                                ? "shadow-md shadow-primary/20 scale-[1.01]" 
+                                : "hover:bg-accent/40"
+                            }`}
+                          >
+                            {opt.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* TTS Selection */}
+                    <div className="space-y-3 bg-muted/10 p-4 rounded-xl border border-border/20">
+                      <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground block">
+                        Choose Voice Engine (TTS)
+                      </Label>
+                      <div className="flex flex-col gap-2">
+                        {ttsOptions.map((opt) => (
+                          <Button
+                            key={opt.id}
+                            type="button"
+                            variant={selectedTTS === opt.id ? "default" : "outline"}
+                            onClick={() => setSelectedTTS(opt.id)}
+                            className={`h-11 text-xs font-semibold justify-between px-4 ${
+                              selectedTTS === opt.id 
+                                ? "shadow-md shadow-primary/20 scale-[1.01]" 
+                                : "hover:bg-accent/40"
+                            }`}
+                          >
+                            <span>{opt.name}</span>
+                            <span className="font-mono text-muted-foreground">${opt.rate.toFixed(3)}/min</span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Results */}
+                <div className="bg-muted/30 border border-border/30 rounded-2xl p-6 flex flex-col justify-between relative">
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Estimated Cost per Minute</h3>
+                      <div className="text-4xl font-extrabold tracking-tight mt-1 text-foreground">
+                        ${totalCostPerMin.toFixed(3)}<span className="text-lg font-medium text-muted-foreground">/min</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3.5 border-t border-border/20 pt-4 text-sm">
+                      <div className="flex justify-between items-center text-muted-foreground">
+                        <span>LLM Cost</span>
+                        <span className="font-mono text-foreground font-semibold">${selectedLLMObj.rate.toFixed(3)}/min</span>
+                      </div>
+                      <div className="flex justify-between items-center text-muted-foreground">
+                        <span>VCall Voice Infra</span>
+                        <span className="font-mono text-foreground font-semibold">${platformRatePerMin.toFixed(3)}/min</span>
+                      </div>
+                      <div className="flex justify-between items-center text-muted-foreground">
+                        <span>TTS Cost</span>
+                        <span className="font-mono text-foreground font-semibold">${selectedTTSObj.rate.toFixed(3)}/min</span>
+                      </div>
+                      <div className="flex justify-between items-center text-muted-foreground">
+                        <span>Telephony Cost</span>
+                        <span className="font-mono text-foreground font-semibold">$0.000/min</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/30 pt-6 mt-6">
+                    <h4 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Total per month</h4>
+                    <div className="text-4xl font-black text-primary tracking-tight mt-1">
+                      ${totalMonthlyCost.toFixed(2)}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">For pay-as-you-go call volume plan.</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Transaction History Section */}
       <Card className="border border-border/40 bg-card/40 backdrop-blur-md shadow-lg">

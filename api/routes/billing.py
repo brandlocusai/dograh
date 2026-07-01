@@ -9,6 +9,7 @@ from sqlalchemy import func
 from api.db import db_client
 from api.db.models import UserModel, OrganizationModel, BillingTransactionModel
 from api.services.auth.depends import get_user
+from api.services.pricing.cost_calculator import cost_calculator
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -27,6 +28,8 @@ class CheckoutSessionResponse(BaseModel):
 class BalanceResponse(BaseModel):
     balance_usd: float
     price_per_second_usd: float | None
+    platform_infra_rate_per_minute: float | None = 0.055
+    estimated_rates: dict | None = None
 
 
 class TransactionResponse(BaseModel):
@@ -294,9 +297,62 @@ async def get_balance(user: UserModel = Depends(get_user)):
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    platform_infra_rate = 0.055
+    custom_pricing = None
+    try:
+        custom_pricing = await db_client.get_global_configuration_value(
+            "pricing_config", default=None
+        )
+        if custom_pricing:
+            rate_val = custom_pricing.get("platform_infra_rate")
+            if rate_val is not None:
+                platform_infra_rate = float(rate_val)
+    except Exception:
+        pass
+
+    estimated_rates = {
+        "llm": {},
+        "tts": {},
+        "stt": {}
+    }
+
+    try:
+        # LLMs
+        popular_llms = [
+            "openai/gpt-4.1-mini",
+            "openai/gpt-4.1",
+            "anthropic/claude-sonnet-4",
+            "google/gemini-2.5-flash",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat-v3-0324"
+        ]
+        for model_id in popular_llms:
+            pricing_model = cost_calculator.get_pricing_model("llm", "openrouter", model_id, custom_pricing)
+            prompt_price = float(pricing_model.prompt_token_price) if pricing_model else 0.0000025
+            completion_price = float(pricing_model.completion_token_price) if pricing_model else 0.000010
+            # 1000 prompt + 300 completion tokens per minute
+            estimated_rates["llm"][model_id] = (prompt_price * 1000.0) + (completion_price * 300.0)
+
+        # TTS
+        for provider, model_id in [("elevenlabs", "default"), ("deepgram", "aura-2"), ("openai", "default")]:
+            pricing_model = cost_calculator.get_pricing_model("tts", provider, model_id, custom_pricing)
+            char_price = float(pricing_model.character_price) if pricing_model else 0.000030
+            key = provider
+            estimated_rates["tts"][key] = char_price * 800.0
+
+        # STT
+        for provider, model_id in [("deepgram", "nova-2"), ("openai", "default")]:
+            pricing_model = cost_calculator.get_pricing_model("stt", provider, model_id, custom_pricing)
+            sec_price = float(pricing_model.second_price) if pricing_model else 0.00025
+            estimated_rates["stt"][provider] = sec_price * 60.0
+    except Exception as e:
+        logger.warning(f"Error calculating estimated rates for balance API: {e}")
+
     return BalanceResponse(
         balance_usd=org.balance_usd,
-        price_per_second_usd=org.price_per_second_usd
+        price_per_second_usd=org.price_per_second_usd,
+        platform_infra_rate_per_minute=platform_infra_rate,
+        estimated_rates=estimated_rates
     )
 
 

@@ -1,181 +1,152 @@
-from datetime import UTC, datetime
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
 import pytest
+from unittest.mock import AsyncMock, patch
+from decimal import Decimal
 
-from api.services.pricing import workflow_run_cost as workflow_run_cost_mod
-from api.services.pricing.workflow_run_cost import (
-    apply_usage_delta_to_organization,
-    build_workflow_run_cost_info,
-    calculate_workflow_run_cost,
-)
+from api.services.pricing.workflow_run_cost import _build_usage_cost_snapshot
+from api.db.models import OrganizationModel
 
 
-def _make_workflow_run():
-    return SimpleNamespace(
-        id=123,
-        workflow_id=456,
-        mode="textchat",
-        created_at=datetime.now(UTC),
-        usage_info={
-            "llm": {},
-            "tts": {},
-            "stt": {},
-            "call_duration_seconds": 7,
+@pytest.fixture
+def sample_openrouter_usage_info():
+    return {
+        "llm": {
+            "OpenRouterLLMService#0|||meta-llama/llama-3.3-70b-instruct": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 500,
+                "total_tokens": 1500,
+            }
         },
-        cost_info={},
-        workflow=SimpleNamespace(
-            organization_id=42,
-            user=SimpleNamespace(selected_organization_id=42),
-        ),
-    )
+        "tts": {
+            "ElevenLabsTTSService#0|||elevenlabs_default": 1000,  # 1000 characters
+        },
+        "stt": {
+            "DeepgramSTTService#0|||nova-2": 60.0,  # 60 seconds
+        },
+        "call_duration_seconds": 60,
+    }
 
 
 @pytest.mark.asyncio
-async def test_build_workflow_run_cost_info_does_not_update_org_usage(monkeypatch):
-    workflow_run = _make_workflow_run()
-    get_org = AsyncMock(return_value=SimpleNamespace(id=42, price_per_second_usd=1.5))
-    update_usage = AsyncMock()
-
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "get_organization_by_id", get_org
-    )
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "update_usage_after_run", update_usage
-    )
-
-    cost_info = await build_workflow_run_cost_info(workflow_run)
-
-    assert cost_info is not None
-    assert cost_info["call_duration_seconds"] == 7
-    assert "cost_breakdown" in cost_info
-    assert "dograh_token_usage" in cost_info
-    assert cost_info["charge_usd"] == 10.5
-    update_usage.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_calculate_workflow_run_cost_keeps_org_usage_side_effect_in_wrapper(
-    monkeypatch,
+async def test_build_usage_cost_snapshot_openrouter_dynamic_from_api(
+    sample_openrouter_usage_info,
 ):
-    workflow_run = _make_workflow_run()
-    get_org = AsyncMock(return_value=SimpleNamespace(id=42, price_per_second_usd=None))
-    update_run = AsyncMock()
-    update_usage = AsyncMock()
+    # Mocking fetching prices from OpenRouter models endpoint
+    mock_or_prices = {
+        "meta-llama/llama-3.3-70b-instruct": {
+            "prompt_token_price": Decimal("0.00000060"),  # $0.60 per 1M tokens
+            "completion_token_price": Decimal("0.00000240"),  # $2.40 per 1M tokens
+        }
+    }
 
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client,
-        "get_workflow_run_by_id",
-        AsyncMock(return_value=workflow_run),
-    )
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "get_organization_by_id", get_org
-    )
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "update_workflow_run", update_run
-    )
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "update_usage_after_run", update_usage
+    mock_org = OrganizationModel(
+        id=1,
+        provider_id="org_1",
+        balance_usd=100.0,
+        price_per_second_usd=0.0025,
     )
 
-    await calculate_workflow_run_cost(workflow_run.id)
+    custom_pricing = {"llm": {}}
 
-    update_run.assert_awaited_once()
-    saved_kwargs = update_run.await_args.kwargs
-    assert saved_kwargs["run_id"] == workflow_run.id
-    assert "cost_breakdown" in saved_kwargs["cost_info"]
-    update_usage.assert_awaited_once()
+    # Calculate expected raw service costs:
+    # LLM prompt: 1000 * 0.0000006 = 0.0006
+    # LLM completion: 500 * 0.0000024 = 0.0012
+    # LLM total: 0.0018
+    # TTS cost: 1000 * 0.0000256 = 0.0256
+    # STT cost: 60 * (0.0058 / 60) = 0.0058
+    # Raw total = 0.0018 + 0.0256 + 0.0058 = 0.0332
+    # Platform Cost = (60 / 60) * 0.055 = 0.055
+    # Total charge = 0.0332 + 0.055 = 0.0882
+
+    with patch(
+        "api.services.pricing.workflow_run_cost.db_client.get_global_configuration_value",
+        AsyncMock(return_value=custom_pricing),
+    ), patch(
+        "api.services.pricing.openrouter_pricing.fetch_openrouter_prices",
+        return_value=mock_or_prices,
+    ):
+
+        cost_info = await _build_usage_cost_snapshot(
+            sample_openrouter_usage_info,
+            organization=mock_org,
+            calculated_at="2026-07-01T12:00:00Z",
+        )
+
+        assert cost_info is not None
+        assert cost_info["charge_usd"] == pytest.approx(0.0882)
+        assert cost_info["platform_infra_rate"] == 0.055
+
+        # Verify raw breakdown values
+        breakdown = cost_info["cost_breakdown"]
+        assert breakdown["llm_cost"] == pytest.approx(0.0018)
+        assert breakdown["tts_cost"] == pytest.approx(0.0256)
+        assert breakdown["stt_cost"] == pytest.approx(0.0058)
+        assert breakdown["platform_cost"] == pytest.approx(0.055)
+        assert breakdown["total"] == pytest.approx(0.0332)
 
 
 @pytest.mark.asyncio
-async def test_apply_usage_delta_to_organization_uses_incremental_costs(
-    monkeypatch,
+async def test_build_usage_cost_snapshot_openrouter_with_db_override(
+    sample_openrouter_usage_info,
 ):
-    workflow_run = _make_workflow_run()
-    workflow_run.cost_info = {"call_id": "preserve-me"}
-
-    usage_delta_one = {
-        "llm": {
-            "OpenAILLMService#0|||gpt-4.1-mini": {
-                "prompt_tokens": 1_000,
-                "completion_tokens": 100,
-                "total_tokens": 1_100,
-                "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-            }
-        },
-        "tts": {},
-        "stt": {},
-        "call_duration_seconds": 3,
-    }
-    usage_delta_two = {
-        "llm": {
-            "OpenAILLMService#0|||gpt-4.1-mini": {
-                "prompt_tokens": 2_000,
-                "completion_tokens": 50,
-                "total_tokens": 2_050,
-                "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-            }
-        },
-        "tts": {},
-        "stt": {},
-        "call_duration_seconds": 4,
-    }
-    merged_usage = {
-        "llm": {
-            "OpenAILLMService#0|||gpt-4.1-mini": {
-                "prompt_tokens": 3_000,
-                "completion_tokens": 150,
-                "total_tokens": 3_150,
-                "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-            }
-        },
-        "tts": {},
-        "stt": {},
-        "call_duration_seconds": 7,
+    mock_or_prices = {
+        "meta-llama/llama-3.3-70b-instruct": {
+            "prompt_token_price": Decimal("0.00000060"),
+            "completion_token_price": Decimal("0.00000240"),
+        }
     }
 
-    get_org = AsyncMock(return_value=SimpleNamespace(id=42, price_per_second_usd=1.5))
-    update_usage = AsyncMock()
-
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "get_organization_by_id", get_org
-    )
-    monkeypatch.setattr(
-        workflow_run_cost_mod.db_client, "update_usage_after_run", update_usage
+    mock_org = OrganizationModel(
+        id=1,
+        provider_id="org_1",
+        balance_usd=100.0,
     )
 
-    first_delta = await apply_usage_delta_to_organization(workflow_run, usage_delta_one)
-    second_delta = await apply_usage_delta_to_organization(
-        workflow_run, usage_delta_two
-    )
-    total_workflow_run = SimpleNamespace(**workflow_run.__dict__)
-    total_workflow_run.usage_info = merged_usage
-    total_cost = await build_workflow_run_cost_info(total_workflow_run)
+    # Override LLM price in database override pricing config
+    # Set platform_infra_rate to 0.10 and markup is removed
+    custom_pricing = {
+        "platform_infra_rate": 0.10,
+        "llm": {
+            "openrouter": {
+                "meta-llama/llama-3.3-70b-instruct": {
+                    "prompt_token_price": 0.0000020,  # Custom override ($2 per 1M)
+                    "completion_token_price": 0.0000080,  # Custom override ($8 per 1M)
+                }
+            }
+        },
+    }
 
-    assert first_delta is not None
-    assert second_delta is not None
-    assert total_cost is not None
-    assert update_usage.await_count == 2
-    assert update_usage.await_args_list[0].args == (
-        42,
-        first_delta["dograh_token_usage"],
-        3.0,
-        first_delta["charge_usd"],
-    )
-    assert update_usage.await_args_list[1].args == (
-        42,
-        second_delta["dograh_token_usage"],
-        4.0,
-        second_delta["charge_usd"],
-    )
-    assert (
-        first_delta["dograh_token_usage"] + second_delta["dograh_token_usage"]
-    ) == pytest.approx(total_cost["dograh_token_usage"])
-    assert (
-        first_delta["charge_usd"] + second_delta["charge_usd"]
-        == total_cost["charge_usd"]
-    )
+    # Expected Override Cost:
+    # LLM prompt: 1000 * 0.0000020 = 0.002
+    # LLM completion: 500 * 0.0000080 = 0.004
+    # LLM total: 0.006
+    # TTS cost: 1000 * 0.0000256 = 0.0256
+    # STT cost: 60 * (0.0058 / 60) = 0.0058
+    # Raw total = 0.006 + 0.0256 + 0.0058 = 0.0374
+    # Platform Cost = (60 / 60) * 0.10 = 0.10
+    # Total charge = 0.0374 + 0.10 = 0.1374
+
+    with patch(
+        "api.services.pricing.workflow_run_cost.db_client.get_global_configuration_value",
+        AsyncMock(return_value=custom_pricing),
+    ), patch(
+        "api.services.pricing.openrouter_pricing.fetch_openrouter_prices",
+        return_value=mock_or_prices,
+    ):
+
+        cost_info = await _build_usage_cost_snapshot(
+            sample_openrouter_usage_info,
+            organization=mock_org,
+            calculated_at="2026-07-01T12:00:00Z",
+        )
+
+        assert cost_info is not None
+        assert cost_info["charge_usd"] == pytest.approx(0.1374)
+        assert cost_info["platform_infra_rate"] == 0.10
+
+        # Verify raw breakdown values
+        breakdown = cost_info["cost_breakdown"]
+        assert breakdown["llm_cost"] == pytest.approx(0.006)
+        assert breakdown["tts_cost"] == pytest.approx(0.0256)
+        assert breakdown["stt_cost"] == pytest.approx(0.0058)
+        assert breakdown["platform_cost"] == pytest.approx(0.10)
+        assert breakdown["total"] == pytest.approx(0.0374)
