@@ -139,8 +139,13 @@ class UserClient(BaseDBClient):
                     # Inject defaults for other required fields from registry
                     config_cls = REGISTRY[service_type_map[section]].get(active_provider)
                     if config_cls:
+                        from pydantic_core import PydanticUndefined
                         for field_name, field_def in config_cls.model_fields.items():
-                            if field_name not in config_data[section] and field_def.default is not None:
+                            if (
+                                field_name not in config_data[section]
+                                and field_def.default is not None
+                                and field_def.default is not PydanticUndefined
+                            ):
                                 config_data[section][field_name] = field_def.default
                         if section == "tts" and "voice_id" in config_cls.model_fields and "voice_id" not in config_data[section]:
                             config_data[section]["voice_id"] = "21m00Tcm4TlvDq8ikWAM"
