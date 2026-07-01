@@ -464,12 +464,10 @@ class OrganizationUsageClient(BaseDBClient):
                     )
                 )
                 config_obj = config_result.scalar_one_or_none()
-                if config_obj and config_obj.configuration:
-                    user_config = UserConfiguration.model_validate(
-                        config_obj.configuration
-                    )
-                    if user_config.timezone:
-                        user_timezone = user_config.timezone
+                if config_obj and isinstance(config_obj.configuration, dict):
+                    tz = config_obj.configuration.get("timezone")
+                    if tz:
+                        user_timezone = tz
 
             # Validate timezone string
             try:

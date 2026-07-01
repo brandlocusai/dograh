@@ -51,11 +51,11 @@ async def test_build_usage_cost_snapshot_openrouter_dynamic_from_api(
     # LLM prompt: 1000 * 0.0000006 = 0.0006
     # LLM completion: 500 * 0.0000024 = 0.0012
     # LLM total: 0.0018
-    # TTS cost: 1000 * 0.0000256 = 0.0256
+    # TTS cost: 1000 * 0.00010 = 0.10
     # STT cost: 60 * (0.0058 / 60) = 0.0058
-    # Raw total = 0.0018 + 0.0256 + 0.0058 = 0.0332
+    # Raw total = 0.0018 + 0.10 + 0.0058 = 0.1076
     # Platform Cost = (60 / 60) * 0.055 = 0.055
-    # Total charge = 0.0332 + 0.055 = 0.0882
+    # Total charge = 0.1076 + 0.055 = 0.1626
 
     with patch(
         "api.services.pricing.workflow_run_cost.db_client.get_global_configuration_value",
@@ -72,16 +72,16 @@ async def test_build_usage_cost_snapshot_openrouter_dynamic_from_api(
         )
 
         assert cost_info is not None
-        assert cost_info["charge_usd"] == pytest.approx(0.0882)
+        assert cost_info["charge_usd"] == pytest.approx(0.1626)
         assert cost_info["platform_infra_rate"] == 0.055
 
         # Verify raw breakdown values
         breakdown = cost_info["cost_breakdown"]
         assert breakdown["llm_cost"] == pytest.approx(0.0018)
-        assert breakdown["tts_cost"] == pytest.approx(0.0256)
+        assert breakdown["tts_cost"] == pytest.approx(0.10)
         assert breakdown["stt_cost"] == pytest.approx(0.0058)
         assert breakdown["platform_cost"] == pytest.approx(0.055)
-        assert breakdown["total"] == pytest.approx(0.0332)
+        assert breakdown["total"] == pytest.approx(0.1076)
 
 
 @pytest.mark.asyncio
@@ -119,11 +119,11 @@ async def test_build_usage_cost_snapshot_openrouter_with_db_override(
     # LLM prompt: 1000 * 0.0000020 = 0.002
     # LLM completion: 500 * 0.0000080 = 0.004
     # LLM total: 0.006
-    # TTS cost: 1000 * 0.0000256 = 0.0256
+    # TTS cost: 1000 * 0.00010 = 0.10
     # STT cost: 60 * (0.0058 / 60) = 0.0058
-    # Raw total = 0.006 + 0.0256 + 0.0058 = 0.0374
+    # Raw total = 0.006 + 0.10 + 0.0058 = 0.1118
     # Platform Cost = (60 / 60) * 0.10 = 0.10
-    # Total charge = 0.0374 + 0.10 = 0.1374
+    # Total charge = 0.1118 + 0.10 = 0.2118
 
     with patch(
         "api.services.pricing.workflow_run_cost.db_client.get_global_configuration_value",
@@ -140,13 +140,13 @@ async def test_build_usage_cost_snapshot_openrouter_with_db_override(
         )
 
         assert cost_info is not None
-        assert cost_info["charge_usd"] == pytest.approx(0.1374)
+        assert cost_info["charge_usd"] == pytest.approx(0.2118)
         assert cost_info["platform_infra_rate"] == 0.10
 
         # Verify raw breakdown values
         breakdown = cost_info["cost_breakdown"]
         assert breakdown["llm_cost"] == pytest.approx(0.006)
-        assert breakdown["tts_cost"] == pytest.approx(0.0256)
+        assert breakdown["tts_cost"] == pytest.approx(0.10)
         assert breakdown["stt_cost"] == pytest.approx(0.0058)
         assert breakdown["platform_cost"] == pytest.approx(0.10)
-        assert breakdown["total"] == pytest.approx(0.0374)
+        assert breakdown["total"] == pytest.approx(0.1118)
