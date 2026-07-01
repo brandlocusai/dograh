@@ -120,6 +120,8 @@ async def verify_session(
 
     try:
         session = stripe.checkout.Session.retrieve(request.session_id)
+        if not isinstance(session, dict) and hasattr(session, "to_dict"):
+            session = session.to_dict()
     except Exception as e:
         logger.error(f"Failed to retrieve Stripe session {request.session_id}: {e}")
         raise HTTPException(
@@ -225,6 +227,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
+        if not isinstance(session, dict) and hasattr(session, "to_dict"):
+            session = session.to_dict()
         stripe_session_id = session.get("id")
         org_id_str = session.get("client_reference_id")
         amount_total = session.get("amount_total")  # in cents
