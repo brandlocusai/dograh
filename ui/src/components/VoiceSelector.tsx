@@ -23,6 +23,7 @@ interface VoiceSelectorProps {
     model?: string;
     language?: string;
     className?: string;
+    disabled?: boolean;
 }
 
 export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
@@ -32,6 +33,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
     model,
     language,
     className,
+    disabled = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -210,6 +212,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
         return (
             <div className={cn("space-y-2", className)}>
                 <Input
+                    disabled={disabled}
                     type="text"
                     placeholder="Enter voice ID"
                     value={value || ""}
@@ -223,6 +226,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
         return (
             <div className={cn("space-y-2", className)}>
                 <Input
+                    disabled={disabled}
                     type="text"
                     placeholder="Enter voice ID"
                     value={manualVoiceId}
@@ -230,6 +234,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                 />
                 <div className="flex items-center space-x-2">
                     <Checkbox
+                        disabled={disabled}
                         id="manual-voice-input"
                         checked={isManualInput}
                         onCheckedChange={(checked) => handleManualInputToggle(checked as boolean)}
@@ -257,7 +262,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                             "w-full justify-between",
                             !value && "text-muted-foreground"
                         )}
-                        disabled={isLoading}
+                        disabled={disabled || isLoading}
                     >
                         <span className="truncate">
                             {isLoading ? "Loading voices..." : getSelectedVoiceName()}

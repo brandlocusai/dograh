@@ -87,7 +87,20 @@ async def _build_usage_cost_snapshot(
         logger.warning("No usage info available for workflow run")
         return None
 
-    cost_breakdown = cost_calculator.calculate_total_cost(usage_info)
+    # Load custom pricing configuration from database
+    custom_pricing = None
+    try:
+        custom_pricing = await db_client.get_global_configuration_value(
+            "pricing_config", default=None
+        )
+    except Exception as e:
+        logger.warning(
+            f"Could not load global pricing config: {e}. Using defaults."
+        )
+
+    cost_breakdown = cost_calculator.calculate_total_cost(
+        usage_info, custom_pricing
+    )
 
     if include_telephony_cost and workflow_run is not None:
         try:
@@ -107,34 +120,44 @@ async def _build_usage_cost_snapshot(
     total_cost_usd = Decimal(str(cost_breakdown["total"]))
     dograh_tokens = float(total_cost_usd * Decimal("100"))
 
-    if organization is None and workflow_run is not None:
-        organization = await _get_pricing_organization(workflow_run)
+    # Calculate actual service costs (LLM + TTS + STT)
+    llm_cost = Decimal(str(cost_breakdown.get("llm_cost", 0.0)))
+    tts_cost = Decimal(str(cost_breakdown.get("tts_cost", 0.0)))
+    stt_cost = Decimal(str(cost_breakdown.get("stt_cost", 0.0)))
+    total_service_cost = llm_cost + tts_cost + stt_cost
 
-    charge_usd = None
-    if organization:
-        rate = organization.price_per_second_usd
-        if rate is None:
-            rate = 0.0025  # Default: $0.15 per minute
-        duration_seconds = usage_info.get("call_duration_seconds", 0)
-        charge_usd = float(
-            Decimal(str(duration_seconds))
-            * Decimal(str(rate))
-        )
+    # Fetch platform infrastructure rate (defaulting to $0.055/min)
+    platform_infra_rate = Decimal("0.055")
+    if custom_pricing:
+        rate_val = custom_pricing.get("platform_infra_rate")
+        if rate_val is not None:
+            platform_infra_rate = Decimal(str(rate_val))
+
+    # Calculate prorated platform cost based on call duration in seconds
+    call_duration_seconds = Decimal(str(usage_info.get("call_duration_seconds", 0)))
+    platform_cost = (call_duration_seconds / Decimal("60.0")) * platform_infra_rate
+
+    # Charge is: actual service usage cost + platform_cost (no markup)
+    charge_usd = float(total_service_cost + platform_cost)
 
     cost_info = {
-        "cost_breakdown": cost_breakdown,
+        "cost_breakdown": {
+            **cost_breakdown,
+            "platform_cost": float(platform_cost),
+        },
         "total_cost_usd": float(total_cost_usd),
         "dograh_token_usage": dograh_tokens,
         "calculated_at": calculated_at
         or (workflow_run.created_at.isoformat() if workflow_run is not None else None),
-        "call_duration_seconds": usage_info.get("call_duration_seconds", 0),
+        "call_duration_seconds": int(call_duration_seconds),
     }
 
     if charge_usd is not None:
         cost_info["charge_usd"] = charge_usd
-        cost_info["price_per_second_usd"] = organization.price_per_second_usd
+        cost_info["platform_infra_rate"] = float(platform_infra_rate)
 
     return cost_info
+
 
 
 async def build_workflow_run_cost_info(workflow_run) -> dict | None:

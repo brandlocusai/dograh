@@ -194,15 +194,18 @@ export function LLMConfigSelector({
                 </div>
             </div>
 
-            <div className="space-y-2">
-                <Label>API Key</Label>
-                <Input
-                    type="text"
-                    placeholder="Enter API key"
-                    value={apiKey}
-                    onChange={(e) => onApiKeyChange(e.target.value)}
-                />
-            </div>
+            {/* Hiding API Key input since everything is managed globally by the platform */}
+            {false && (
+                <div className="space-y-2">
+                    <Label>API Key</Label>
+                    <Input
+                        type="text"
+                        placeholder="Enter API key"
+                        value={apiKey}
+                        onChange={(e) => onApiKeyChange(e.target.value)}
+                    />
+                </div>
+            )}
         </div>
     );
 }

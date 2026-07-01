@@ -149,3 +149,27 @@ async def get_workflow_runs(
         limit=limit,
         total_pages=total_pages,
     )
+
+
+class GlobalConfigValueSchema(BaseModel):
+    value: dict
+
+
+@router.get("/global-config/{key}")
+async def get_global_config(
+    key: str,
+    user: UserModel = Depends(get_superuser),
+):
+    val = await db_client.get_global_configuration_value(key, default={})
+    return {"key": key, "value": val}
+
+
+@router.put("/global-config/{key}")
+async def update_global_config(
+    key: str,
+    payload: GlobalConfigValueSchema,
+    user: UserModel = Depends(get_superuser),
+):
+    await db_client.upsert_global_configuration(key, payload.value)
+    return {"key": key, "value": payload.value}
+

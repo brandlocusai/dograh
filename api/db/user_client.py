@@ -73,14 +73,125 @@ class UserClient(BaseDBClient):
                 )
             )
             configuration_obj = result.scalars().first()
-            if not configuration_obj:
-                return UserConfiguration()
+
+            # Load global default models
+            from api.db.models import GlobalConfigurationModel
+            from api.services.configuration.registry import REGISTRY, ServiceType
+            
+            default_models = {}
+            try:
+                global_res = await session.execute(
+                    select(GlobalConfigurationModel).where(
+                        GlobalConfigurationModel.key == "default_models"
+                    )
+                )
+                global_config_obj = global_res.scalars().first()
+                if global_config_obj:
+                    default_models = global_config_obj.value
+            except Exception as e:
+                logger.warning(
+                    f"Could not load global default models from DB: {e}. Using fallback defaults."
+                )
+
+            if not default_models:
+                default_models = {
+                    "llm_provider": "openrouter",
+                    "llm_model": "openai/gpt-4o",
+                    "stt_provider": "deepgram",
+                    "stt_model": "nova-2",
+                    "tts_provider": "elevenlabs",
+                    "tts_model": "default",
+                }
+
+            config_data = {}
+            if configuration_obj and isinstance(configuration_obj.configuration, dict):
+                import copy
+                config_data = copy.deepcopy(configuration_obj.configuration)
+
+            service_type_map = {
+                "llm": ServiceType.LLM,
+                "tts": ServiceType.TTS,
+                "stt": ServiceType.STT,
+            }
+
+            for section in ["llm", "tts", "stt"]:
+                provider = default_models.get(f"{section}_provider")
+                model = default_models.get(f"{section}_model")
+                if provider and model:
+                    if section not in config_data or not isinstance(config_data[section], dict):
+                        config_data[section] = {}
+                    
+                    config_data[section]["provider"] = provider
+                    if section == "llm":
+                        current_model = config_data[section].get("model")
+                        if not current_model:
+                            config_data[section]["model"] = model
+                    else:
+                        # Only set model if it is a real model name (not the placeholder "default")
+                        # so that provider-specific schema defaults are used (e.g. eleven_flash_v2_5)
+                        if model and model != "default":
+                            config_data[section]["model"] = model
+
+                    # Inject defaults for other required fields from registry
+                    config_cls = REGISTRY[service_type_map[section]].get(provider)
+                    if config_cls:
+                        for field_name, field_def in config_cls.model_fields.items():
+                            if field_name not in config_data[section] and field_def.default is not None:
+                                config_data[section][field_name] = field_def.default
+                        if section == "tts" and "voice_id" in config_cls.model_fields and "voice_id" not in config_data[section]:
+                            config_data[section]["voice_id"] = "21m00Tcm4TlvDq8ikWAM"
+                    
+                    # Inject admin configured global default overrides for properties
+                    for key_name in ["base_url", "max_tokens", "voice_id", "language"]:
+                        global_key = f"{section}_{key_name}"
+                        if global_key in default_models:
+                            # User hasn't overridden it, inject admin default value
+                            if key_name not in config_data[section]:
+                                config_data[section][key_name] = default_models[global_key]
+                    
+                    # Inject tts_voice_id as 'voice' field too (ElevenLabs, Deepgram TTS use 'voice')
+                    if section == "tts" and "tts_voice_id" in default_models:
+                        voice_id_val = default_models["tts_voice_id"]
+                        if voice_id_val and "voice" not in config_data[section]:
+                            config_data[section]["voice"] = voice_id_val
+
+            # Load global API keys configuration from database
+            global_api_keys = {}
+            try:
+                keys_res = await session.execute(
+                    select(GlobalConfigurationModel).where(
+                        GlobalConfigurationModel.key == "api_keys"
+                    )
+                )
+                keys_obj = keys_res.scalars().first()
+                if keys_obj:
+                    global_api_keys = keys_obj.value
+            except Exception as e:
+                logger.warning(
+                    f"Could not load global API keys from DB: {e}."
+                )
+
+            # Inject admin-managed api_key for the chosen provider if not set
+            for section in ["llm", "tts", "stt"]:
+                if section in config_data and isinstance(config_data[section], dict):
+                    sect_provider = config_data[section].get("provider")
+                    if sect_provider:
+                        sect_type = service_type_map[section]
+                        config_cls = REGISTRY[sect_type].get(sect_provider)
+                        if config_cls and "api_key" in config_cls.model_fields:
+                            admin_key = global_api_keys.get(sect_provider)
+                            if not admin_key:
+                                import os
+                                env_key_name = f"{sect_provider.upper()}_API_KEY"
+                                admin_key = os.getenv(env_key_name)
+                            if admin_key:
+                                config_data[section]["api_key"] = admin_key
 
             try:
                 return UserConfiguration.model_validate(
                     {
-                        **configuration_obj.configuration,
-                        "last_validated_at": configuration_obj.last_validated_at,
+                        **config_data,
+                        "last_validated_at": configuration_obj.last_validated_at if configuration_obj else None,
                     }
                 )
             except ValidationError as e:
@@ -102,13 +213,21 @@ class UserClient(BaseDBClient):
                 )
             )
             configuration_obj = result.scalars().first()
+            # Strip any user-supplied api keys or secrets before saving
+            config_dict = configuration.model_dump()
+            for section in ["llm", "tts", "stt", "realtime", "embeddings"]:
+                if section in config_dict and isinstance(config_dict[section], dict):
+                    config_dict[section].pop("api_key", None)
+                    config_dict[section].pop("aws_access_key", None)
+                    config_dict[section].pop("aws_secret_key", None)
+
             if not configuration_obj:
                 configuration_obj = UserConfigurationModel(
-                    user_id=user_id, configuration=configuration.model_dump()
+                    user_id=user_id, configuration=config_dict
                 )
                 session.add(configuration_obj)
             else:
-                configuration_obj.configuration = configuration.model_dump()
+                configuration_obj.configuration = config_dict
             try:
                 await session.commit()
             except Exception as e:
